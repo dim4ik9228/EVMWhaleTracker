@@ -4,6 +4,16 @@
     <ProjectReference Include="..\Application\Application.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Nethereum.RPC.Reactive" Version="6.1.0" />
+    <PackageReference Include="Nethereum.JsonRpc.WebSocketClient" Version="6.1.0" />
+    <PackageReference Include="Nethereum.Web3" Version="6.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

@@ -5,4 +5,7 @@
     <Project Path="src/Infrastructure/Infrastructure.csproj" />
     <Project Path="src/Presentation.Telegram/Presentation.Telegram.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/UnitTests/UnitTests.csproj" />
+  </Folder>
 </Solution>

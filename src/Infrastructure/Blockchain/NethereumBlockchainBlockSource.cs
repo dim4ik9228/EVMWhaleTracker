@@ -1,0 +1,204 @@
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
+using Application.Messaging;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Nethereum.Hex.HexTypes;
+using Nethereum.JsonRpc.WebSocketClient;
+using Nethereum.JsonRpc.WebSocketStreamingClient;
+using Nethereum.RPC.Eth.DTOs;
+using Nethereum.RPC.Reactive.Eth.Subscriptions;
+using Nethereum.Web3;
+
+namespace Infrastructure.Blockchain;
+
+public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
+{
+    private readonly Web3 _web3;
+    private readonly string? webSocketRpcUrl;
+    private readonly ILogger<NethereumBlockchainBlockSource> _logger;
+    private readonly IDisposable? _ownedTransport;
+
+    public NethereumBlockchainBlockSource(
+        IOptions<BlockchainIndexerOptions> options,
+        ILogger<NethereumBlockchainBlockSource> logger)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        var settings = options.Value;
+        _logger = logger;
+        webSocketRpcUrl = settings.WebSocketRpcUrl;
+
+        if (!string.IsNullOrWhiteSpace(settings.HttpRpcUrl))
+        {
+            _web3 = new Web3(settings.HttpRpcUrl);
+        }
+        else if (!string.IsNullOrWhiteSpace(settings.WebSocketRpcUrl))
+        {
+            var requestClient = new WebSocketClient(settings.WebSocketRpcUrl);
+            _ownedTransport = requestClient;
+            _web3 = new Web3(requestClient);
+        }
+        else
+        {
+            throw new InvalidOperationException("Either HttpRpcUrl or WebSocketRpcUrl must be configured for the blockchain indexer.");
+        }
+    }
+
+    public void Dispose()
+    {
+        _ownedTransport?.Dispose();
+    }
+
+    public async Task<ulong> GetLatestBlockNumberAsync(CancellationToken cancellationToken)
+    {
+        var blockNumber = await _web3.Eth.Blocks.GetBlockNumber.SendRequestAsync().ConfigureAwait(false);
+        return checked((ulong)blockNumber.Value);
+    }
+
+    public async Task<RawBlockData?> GetBlockAsync(ulong blockNumber, CancellationToken cancellationToken)
+    {
+        var block = await _web3.Eth.Blocks.GetBlockWithTransactionsByNumber
+            .SendRequestAsync(new HexBigInteger(new BigInteger(blockNumber)))
+            .ConfigureAwait(false);
+
+        if (block is null)
+        {
+            return null;
+        }
+
+        var transactions = new List<RawTransactionData>(block.Transactions.Length);
+        var logs = new List<RawLogData>();
+
+        foreach (var transaction in block.Transactions)
+        {
+            transactions.Add(new RawTransactionData(
+                TransactionHash: transaction.TransactionHash,
+                FromAddress: transaction.From,
+                ToAddress: transaction.To,
+                Value: Web3.Convert.FromWei(transaction.Value?.Value ?? BigInteger.Zero)));
+
+            try
+            {
+                var receipt = await _web3.Eth.Transactions.GetTransactionReceipt
+                    .SendRequestAsync(transaction.TransactionHash)
+                    .ConfigureAwait(false);
+
+                if (receipt?.Logs is null)
+                {
+                    continue;
+                }
+
+                foreach (var log in receipt.Logs)
+                {
+                    logs.Add(new RawLogData(
+                        TransactionHash: transaction.TransactionHash,
+                        ContractAddress: log.Address ?? string.Empty,
+                        Topics: log.Topics?.Select(topic => topic?.ToString() ?? string.Empty).ToArray() ?? Array.Empty<string>(),
+                        Data: log.Data ?? string.Empty));
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load receipt logs for transaction {TransactionHash} in block {BlockNumber}.", transaction.TransactionHash, blockNumber);
+            }
+        }
+
+        var timestamp = block.Timestamp?.Value is { } unixSeconds
+            ? DateTimeOffset.FromUnixTimeSeconds((long)unixSeconds)
+            : DateTimeOffset.UnixEpoch;
+
+        return new RawBlockData(
+            BlockNumber: block.Number?.Value is { } value ? checked((ulong)value) : blockNumber,
+            BlockHash: block.BlockHash ?? string.Empty,
+            BlockTimestampUtc: timestamp,
+            Transactions: transactions,
+            Logs: logs);
+    }
+
+    public async IAsyncEnumerable<ulong> StreamNewBlockNumbersAsync([EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(webSocketRpcUrl))
+        {
+            throw new InvalidOperationException("WebSocketRpcUrl must be configured to stream new block headers.");
+        }
+
+        var client = new StreamingWebSocketClient(webSocketRpcUrl);
+        var subscription = new EthNewBlockHeadersObservableSubscription(client);
+        var queue = Channel.CreateUnbounded<ulong>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            AllowSynchronousContinuations = false
+        });
+
+        using var observerRegistration = subscription.GetSubscriptionDataResponsesAsObservable().Subscribe(
+            new ChannelObserver<Block>(blockHeader =>
+            {
+                if (blockHeader.Number?.Value is { } number)
+                {
+                    queue.Writer.TryWrite(checked((ulong)number));
+                }
+            },
+            exception => queue.Writer.TryComplete(exception),
+            () => queue.Writer.TryComplete()));
+
+        try
+        {
+            await client.StartAsync().ConfigureAwait(false);
+            await subscription.SubscribeAsync().ConfigureAwait(false);
+
+            while (await queue.Reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                while (queue.Reader.TryRead(out var blockNumber))
+                {
+                    yield return blockNumber;
+                }
+            }
+        }
+        finally
+        {
+            try
+            {
+                await subscription.UnsubscribeAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Ignoring websocket unsubscribe failure.");
+            }
+
+            try
+            {
+                await client.StopAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Ignoring websocket stop failure.");
+            }
+
+            client.Dispose();
+        }
+    }
+
+    private sealed class ChannelObserver<T> : IObserver<T>
+    {
+        private readonly Action<T> _onNext;
+        private readonly Action<Exception> _onError;
+        private readonly Action _onCompleted;
+
+        public ChannelObserver(Action<T> onNext, Action<Exception> onError, Action onCompleted)
+        {
+            _onNext = onNext;
+            _onError = onError;
+            _onCompleted = onCompleted;
+        }
+
+        public void OnCompleted() => _onCompleted();
+
+        public void OnError(Exception error) => _onError(error);
+
+        public void OnNext(T value) => _onNext(value);
+    }
+}

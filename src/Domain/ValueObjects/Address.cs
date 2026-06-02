@@ -5,7 +5,7 @@ using Domain.Common;
 
 namespace Domain.ValueObjects;
 
-public sealed record Address
+public sealed class Address : IEquatable<Address>
 {
     private const int ExpectedLength = 42;
     private const int HexLength = 40;
@@ -54,40 +54,34 @@ public sealed record Address
 
     public static Result<Address> Create(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        if (!TryParseAddress(value, requireChecksum: true, out var address, out var error))
         {
-            return Result<Address>.Failure(Error.Validation("Address.Empty", "An EVM address is required."));
+            return Result<Address>.Failure(error);
         }
 
-        var candidate = value.Trim();
-        if (candidate.Length != ExpectedLength)
-        {
-            return Result<Address>.Failure(Error.Validation("Address.Length", "An EVM address must be 42 characters long, including the 0x prefix."));
-        }
-
-        if (!candidate.StartsWith("0x", StringComparison.Ordinal))
-        {
-            return Result<Address>.Failure(Error.Validation("Address.Prefix", "An EVM address must start with the 0x prefix."));
-        }
-
-        var hexPart = candidate[2..];
-        if (!IsHexadecimal(hexPart))
-        {
-            return Result<Address>.Failure(Error.Validation("Address.Hex", "An EVM address can only contain hexadecimal characters after the 0x prefix."));
-        }
-
-        var checksummedAddress = BuildChecksumAddress(hexPart);
-        if (!string.Equals(candidate, checksummedAddress, StringComparison.Ordinal))
-        {
-            return Result<Address>.Failure(Error.Validation("Address.Checksum", "The address must use the EIP-55 checksum format."));
-        }
-
-        return Result<Address>.Success(new Address(checksummedAddress));
+        return Result<Address>.Success(new Address(address));
     }
 
     public static Result<Address> From(string? value) => Create(value);
 
+    public static Result<Address> Normalize(string? value)
+    {
+        if (!TryParseAddress(value, requireChecksum: false, out var address, out var error))
+        {
+            return Result<Address>.Failure(error);
+        }
+
+        return Result<Address>.Success(new Address(address));
+    }
+
     public override string ToString() => Value;
+
+    public bool Equals(Address? other)
+        => other is not null && string.Equals(Value, other.Value, StringComparison.Ordinal);
+
+    public override bool Equals(object? obj) => obj is Address other && Equals(other);
+
+    public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Value);
 
     private static string BuildChecksumAddress(string hexPart)
     {
@@ -129,6 +123,47 @@ public sealed record Address
 
     private static int GetNibble(byte value, bool highNibble)
         => highNibble ? (value >> 4) & 0x0F : value & 0x0F;
+
+    private static bool TryParseAddress(string? value, bool requireChecksum, out string address, out Error error)
+    {
+        address = string.Empty;
+        error = Error.Validation("Address.Empty", "An EVM address is required.");
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var candidate = value.Trim();
+        if (candidate.Length != ExpectedLength)
+        {
+            error = Error.Validation("Address.Length", "An EVM address must be 42 characters long, including the 0x prefix.");
+            return false;
+        }
+
+        if (!candidate.StartsWith("0x", StringComparison.Ordinal))
+        {
+            error = Error.Validation("Address.Prefix", "An EVM address must start with the 0x prefix.");
+            return false;
+        }
+
+        var hexPart = candidate[2..];
+        if (!IsHexadecimal(hexPart))
+        {
+            error = Error.Validation("Address.Hex", "An EVM address can only contain hexadecimal characters after the 0x prefix.");
+            return false;
+        }
+
+        var checksummedAddress = BuildChecksumAddress(hexPart);
+        if (requireChecksum && !string.Equals(candidate, checksummedAddress, StringComparison.Ordinal))
+        {
+            error = Error.Validation("Address.Checksum", "The address must use the EIP-55 checksum format.");
+            return false;
+        }
+
+        address = checksummedAddress;
+        return true;
+    }
 
     private static byte[] Keccak256(ReadOnlySpan<byte> input)
     {
