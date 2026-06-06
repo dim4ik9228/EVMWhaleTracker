@@ -5,6 +5,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
     <PackageReference Include="Nethereum.RPC.Reactive" Version="6.1.0" />
     <PackageReference Include="Nethereum.JsonRpc.WebSocketClient" Version="6.1.0" />
     <PackageReference Include="Nethereum.Web3" Version="6.1.0" />

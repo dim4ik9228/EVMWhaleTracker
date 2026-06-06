@@ -1,7 +1,9 @@
 using Application.Messaging;
 using Infrastructure.Caching;
 using Infrastructure.Blockchain;
+using Infrastructure.Persistence;
 using Infrastructure.Workers;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Presentation.Telegram.Configuration;
@@ -15,6 +17,15 @@ builder.Services.Configure<BlockchainIndexerOptions>(
 
 builder.Services.Configure<TelegramBotOptions>(
     builder.Configuration.GetSection("TelegramBot"));
+
+var connectionString = builder.Configuration.GetConnectionString("Default");
+if (string.IsNullOrWhiteSpace(connectionString))
+{
+    throw new InvalidOperationException("ConnectionStrings:Default must be configured.");
+}
+
+builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddScoped<Application.Abstractions.ITrackedWalletRepository, TrackedWalletRepository>();
 
 builder.Services.AddSingleton<OnChainPipelineChannels>();
 builder.Services.AddSingleton<InMemoryCacheService>();
