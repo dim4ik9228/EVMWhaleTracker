@@ -17,3 +17,5 @@ docker compose up --build
 ```
 
 The generated `.env` is ignored by git and is used only for local development.
+
+Postgres data is stored in `.docker/postgres-data/`, so the database survives container recreation locally.

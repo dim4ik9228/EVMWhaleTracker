@@ -5,6 +5,7 @@
 
 # dotenv files
 .env
+.docker/postgres-data/
 
 # User-specific files
 *.rsuser

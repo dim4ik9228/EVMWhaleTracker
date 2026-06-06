@@ -9,7 +9,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - ./.docker/postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d EvmWhaleTracker"]
       interval: 5s
@@ -34,6 +34,3 @@ services:
       BlockchainIndexer__PollInterval: "00:00:02"
       BlockchainIndexer__WebSocketReconnectDelay: "00:00:05"
     restart: unless-stopped
-
-volumes:
-  postgres-data:
