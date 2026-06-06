@@ -401,7 +401,7 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [x] `TrackedWallet.Create(Address address, ...)` overload
 - [x] EF Core database context
 - [x] Tracked wallet persistence
-- [ ] Database migrations
+- [x] Database migrations
 - [ ] MediatR commands and handlers
 - [ ] Telegram command receiving and routing
 - [ ] Startup cache synchronization
