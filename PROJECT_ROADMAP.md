@@ -402,7 +402,7 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [x] EF Core database context
 - [x] Tracked wallet persistence
 - [x] Database migrations
-- [ ] MediatR commands and handlers
+- [x] MediatR commands and handlers
 - [ ] Telegram command receiving and routing
 - [ ] Startup cache synchronization
 - [ ] Runtime cache updates from add/remove commands

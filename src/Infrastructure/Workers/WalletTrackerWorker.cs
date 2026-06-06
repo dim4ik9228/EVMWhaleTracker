@@ -28,7 +28,7 @@ public sealed class WalletTrackerWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var block in _channels.RawBlockDataChannel.Reader.ReadAllAsync(stoppingToken).ConfigureAwait(false))
+        await foreach (var block in _channels.RawBlockDataChannel.Reader.ReadAllAsync(stoppingToken))
         {
             foreach (var transaction in block.Transactions)
             {
@@ -38,12 +38,12 @@ public sealed class WalletTrackerWorker : BackgroundService
                     transaction.ToAddress,
                     transaction.Value,
                     block,
-                    stoppingToken).ConfigureAwait(false);
+                    stoppingToken);
             }
 
             foreach (var log in block.Logs)
             {
-                await ProcessLogMatchAsync(log, block, stoppingToken).ConfigureAwait(false);
+                await ProcessLogMatchAsync(log, block, stoppingToken);
             }
         }
     }
@@ -56,10 +56,8 @@ public sealed class WalletTrackerWorker : BackgroundService
         RawBlockData block,
         CancellationToken cancellationToken)
     {
-        await ProcessSingleAddressAsync(transactionHash, fromAddress, "outgoing transfer", value, block, cancellationToken)
-            .ConfigureAwait(false);
-        await ProcessSingleAddressAsync(transactionHash, toAddress, "incoming transfer", value, block, cancellationToken)
-            .ConfigureAwait(false);
+        await ProcessSingleAddressAsync(transactionHash, fromAddress, "outgoing transfer", value, block, cancellationToken);
+        await ProcessSingleAddressAsync(transactionHash, toAddress, "incoming transfer", value, block, cancellationToken);
     }
 
     private async Task ProcessSingleAddressAsync(
@@ -96,7 +94,7 @@ public sealed class WalletTrackerWorker : BackgroundService
                 WalletAddress: normalizedAddress.Value,
                 TransactionHash: transactionHash);
 
-            await _channels.NotificationPayloadChannel.Writer.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+            await _channels.NotificationPayloadChannel.Writer.WriteAsync(payload, cancellationToken);
         }
     }
 
@@ -127,7 +125,7 @@ public sealed class WalletTrackerWorker : BackgroundService
                 WalletAddress: normalizedAddress.Value,
                 TransactionHash: log.TransactionHash);
 
-            await _channels.NotificationPayloadChannel.Writer.WriteAsync(payload, cancellationToken).ConfigureAwait(false);
+            await _channels.NotificationPayloadChannel.Writer.WriteAsync(payload, cancellationToken);
         }
     }
 

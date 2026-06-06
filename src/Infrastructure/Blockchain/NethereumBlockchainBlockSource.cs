@@ -54,15 +54,14 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
 
     public async Task<ulong> GetLatestBlockNumberAsync(CancellationToken cancellationToken)
     {
-        var blockNumber = await _web3.Eth.Blocks.GetBlockNumber.SendRequestAsync().ConfigureAwait(false);
+        var blockNumber = await _web3.Eth.Blocks.GetBlockNumber.SendRequestAsync();
         return checked((ulong)blockNumber.Value);
     }
 
     public async Task<RawBlockData?> GetBlockAsync(ulong blockNumber, CancellationToken cancellationToken)
     {
         var block = await _web3.Eth.Blocks.GetBlockWithTransactionsByNumber
-            .SendRequestAsync(new HexBigInteger(new BigInteger(blockNumber)))
-            .ConfigureAwait(false);
+            .SendRequestAsync(new HexBigInteger(new BigInteger(blockNumber)));
 
         if (block is null)
         {
@@ -83,8 +82,7 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
             try
             {
                 var receipt = await _web3.Eth.Transactions.GetTransactionReceipt
-                    .SendRequestAsync(transaction.TransactionHash)
-                    .ConfigureAwait(false);
+                    .SendRequestAsync(transaction.TransactionHash);
 
                 if (receipt?.Logs is null)
                 {
@@ -147,10 +145,10 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
 
         try
         {
-            await client.StartAsync().ConfigureAwait(false);
-            await subscription.SubscribeAsync().ConfigureAwait(false);
+            await client.StartAsync();
+            await subscription.SubscribeAsync();
 
-            while (await queue.Reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
+            while (await queue.Reader.WaitToReadAsync(cancellationToken))
             {
                 while (queue.Reader.TryRead(out var blockNumber))
                 {
@@ -162,7 +160,7 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
         {
             try
             {
-                await subscription.UnsubscribeAsync().ConfigureAwait(false);
+                await subscription.UnsubscribeAsync();
             }
             catch (Exception ex)
             {
@@ -171,7 +169,7 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
 
             try
             {
-                await client.StopAsync().ConfigureAwait(false);
+                await client.StopAsync();
             }
             catch (Exception ex)
             {

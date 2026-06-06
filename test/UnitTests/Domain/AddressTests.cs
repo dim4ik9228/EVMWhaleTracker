@@ -1,3 +1,4 @@
+using Domain.Common;
 using Domain.ValueObjects;
 
 namespace UnitTests.Domain;
@@ -23,7 +24,7 @@ public sealed class AddressTests
         var result = Address.Create(address);
 
         Assert.True(result.IsFailure);
-        Assert.Equal("Address.Checksum", result.Error.Code);
+        Assert.Equal(Errors.Address.Checksum, result.Error);
     }
 
     [Fact]

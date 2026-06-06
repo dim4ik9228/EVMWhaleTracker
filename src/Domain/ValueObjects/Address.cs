@@ -127,7 +127,7 @@ public sealed class Address : IEquatable<Address>
     private static bool TryParseAddress(string? value, bool requireChecksum, out string address, out Error error)
     {
         address = string.Empty;
-        error = Error.Validation("Address.Empty", "An EVM address is required.");
+        error = Errors.Address.Empty;
 
         if (string.IsNullOrWhiteSpace(value))
         {
@@ -137,27 +137,27 @@ public sealed class Address : IEquatable<Address>
         var candidate = value.Trim();
         if (candidate.Length != ExpectedLength)
         {
-            error = Error.Validation("Address.Length", "An EVM address must be 42 characters long, including the 0x prefix.");
+            error = Errors.Address.Length;
             return false;
         }
 
         if (!candidate.StartsWith("0x", StringComparison.Ordinal))
         {
-            error = Error.Validation("Address.Prefix", "An EVM address must start with the 0x prefix.");
+            error = Errors.Address.Prefix;
             return false;
         }
 
         var hexPart = candidate[2..];
         if (!IsHexadecimal(hexPart))
         {
-            error = Error.Validation("Address.Hex", "An EVM address can only contain hexadecimal characters after the 0x prefix.");
+            error = Errors.Address.Hex;
             return false;
         }
 
         var checksummedAddress = BuildChecksumAddress(hexPart);
         if (requireChecksum && !string.Equals(candidate, checksummedAddress, StringComparison.Ordinal))
         {
-            error = Error.Validation("Address.Checksum", "The address must use the EIP-55 checksum format.");
+            error = Errors.Address.Checksum;
             return false;
         }
 

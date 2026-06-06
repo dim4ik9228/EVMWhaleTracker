@@ -32,7 +32,7 @@ public sealed class BlockchainIndexerWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var nextBlockToProcess = await InitializeCursorAsync(stoppingToken).ConfigureAwait(false);
+        var nextBlockToProcess = await InitializeCursorAsync(stoppingToken);
         var useWebSocket = CanUseWebSocket();
         var inWebSocketFallback = false;
 
@@ -42,7 +42,7 @@ public sealed class BlockchainIndexerWorker : BackgroundService
             {
                 try
                 {
-                    nextBlockToProcess = await StreamUntilDropAsync(nextBlockToProcess, stoppingToken).ConfigureAwait(false);
+                    nextBlockToProcess = await StreamUntilDropAsync(nextBlockToProcess, stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -56,15 +56,14 @@ public sealed class BlockchainIndexerWorker : BackgroundService
                 }
             }
 
-            nextBlockToProcess = await PollOnceAsync(nextBlockToProcess, stoppingToken).ConfigureAwait(false);
+            nextBlockToProcess = await PollOnceAsync(nextBlockToProcess, stoppingToken);
 
             if (stoppingToken.IsCancellationRequested)
             {
                 break;
             }
 
-            await Task.Delay(inWebSocketFallback ? _options.WebSocketReconnectDelay : _options.PollInterval, stoppingToken)
-                .ConfigureAwait(false);
+            await Task.Delay(inWebSocketFallback ? _options.WebSocketReconnectDelay : _options.PollInterval, stoppingToken);
 
             useWebSocket = CanUseWebSocket();
             if (useWebSocket)
@@ -81,23 +80,23 @@ public sealed class BlockchainIndexerWorker : BackgroundService
     {
         if (_options.StartBlockNumber.HasValue)
         {
-            return await CatchUpFromAsync(_options.StartBlockNumber.Value, cancellationToken).ConfigureAwait(false);
+            return await CatchUpFromAsync(_options.StartBlockNumber.Value, cancellationToken);
         }
 
-        var latestBlock = await _blockSource.GetLatestBlockNumberAsync(cancellationToken).ConfigureAwait(false);
+        var latestBlock = await _blockSource.GetLatestBlockNumberAsync(cancellationToken);
         return latestBlock + 1;
     }
 
     private async Task<ulong> StreamUntilDropAsync(ulong nextBlockToProcess, CancellationToken cancellationToken)
     {
-        await foreach (var headBlockNumber in _blockSource.StreamNewBlockNumbersAsync(cancellationToken).ConfigureAwait(false))
+        await foreach (var headBlockNumber in _blockSource.StreamNewBlockNumbersAsync(cancellationToken))
         {
             if (headBlockNumber + 1 <= nextBlockToProcess)
             {
                 continue;
             }
 
-            nextBlockToProcess = await PublishRangeAsync(nextBlockToProcess, headBlockNumber, cancellationToken).ConfigureAwait(false);
+            nextBlockToProcess = await PublishRangeAsync(nextBlockToProcess, headBlockNumber, cancellationToken);
         }
 
         return nextBlockToProcess;
@@ -105,24 +104,24 @@ public sealed class BlockchainIndexerWorker : BackgroundService
 
     private async Task<ulong> PollOnceAsync(ulong nextBlockToProcess, CancellationToken cancellationToken)
     {
-        var latestBlockNumber = await _blockSource.GetLatestBlockNumberAsync(cancellationToken).ConfigureAwait(false);
+        var latestBlockNumber = await _blockSource.GetLatestBlockNumberAsync(cancellationToken);
         if (nextBlockToProcess > latestBlockNumber)
         {
             return nextBlockToProcess;
         }
 
-        return await PublishRangeAsync(nextBlockToProcess, latestBlockNumber, cancellationToken).ConfigureAwait(false);
+        return await PublishRangeAsync(nextBlockToProcess, latestBlockNumber, cancellationToken);
     }
 
     private async Task<ulong> CatchUpFromAsync(ulong startBlockNumber, CancellationToken cancellationToken)
     {
-        var latestBlockNumber = await _blockSource.GetLatestBlockNumberAsync(cancellationToken).ConfigureAwait(false);
+        var latestBlockNumber = await _blockSource.GetLatestBlockNumberAsync(cancellationToken);
         if (startBlockNumber > latestBlockNumber)
         {
             return startBlockNumber;
         }
 
-        return await PublishRangeAsync(startBlockNumber, latestBlockNumber, cancellationToken).ConfigureAwait(false);
+        return await PublishRangeAsync(startBlockNumber, latestBlockNumber, cancellationToken);
     }
 
     private async Task<ulong> PublishRangeAsync(ulong startBlockNumber, ulong endBlockNumber, CancellationToken cancellationToken)
@@ -130,10 +129,10 @@ public sealed class BlockchainIndexerWorker : BackgroundService
         var currentBlockNumber = startBlockNumber;
         while (currentBlockNumber <= endBlockNumber)
         {
-            var block = await _blockSource.GetBlockAsync(currentBlockNumber, cancellationToken).ConfigureAwait(false);
+            var block = await _blockSource.GetBlockAsync(currentBlockNumber, cancellationToken);
             if (block is not null)
             {
-                await _channels.RawBlockDataChannel.Writer.WriteAsync(block, cancellationToken).ConfigureAwait(false);
+                await _channels.RawBlockDataChannel.Writer.WriteAsync(block, cancellationToken);
             }
             else
             {

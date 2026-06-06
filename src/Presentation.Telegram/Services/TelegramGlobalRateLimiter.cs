@@ -32,7 +32,7 @@ public sealed class TelegramGlobalRateLimiter : IAsyncDisposable
     {
         try
         {
-            await _refillLoop.ConfigureAwait(false);
+            await _refillLoop;
         }
         catch (OperationCanceledException)
         {
@@ -49,7 +49,7 @@ public sealed class TelegramGlobalRateLimiter : IAsyncDisposable
     {
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
 
-        while (await timer.WaitForNextTickAsync(_shutdown.Token).ConfigureAwait(false))
+        while (await timer.WaitForNextTickAsync(_shutdown.Token))
         {
             var missingPermits = _permitsPerSecond - _semaphore.CurrentCount;
             if (missingPermits > 0)

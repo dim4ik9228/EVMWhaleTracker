@@ -22,8 +22,7 @@ public sealed class TrackedWalletRepository : ITrackedWalletRepository
             .AsNoTracking()
             .OrderBy(wallet => wallet.UserId)
             .ThenBy(wallet => wallet.Address)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+            .ToListAsync(cancellationToken);
 
         return wallets;
     }
@@ -34,8 +33,7 @@ public sealed class TrackedWalletRepository : ITrackedWalletRepository
             .AsNoTracking()
             .Where(wallet => wallet.UserId == userId)
             .OrderBy(wallet => wallet.Address)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+            .ToListAsync(cancellationToken);
 
         return wallets;
     }

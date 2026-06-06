@@ -3,14 +3,26 @@ using Infrastructure.Caching;
 using Infrastructure.Blockchain;
 using Infrastructure.Persistence;
 using Infrastructure.Workers;
+using Application.Behaviors;
+using Application;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Serilog;
 using Presentation.Telegram.Configuration;
 using Presentation.Telegram.Workers;
 using Telegram.Bot;
+using Microsoft.Extensions.Logging;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+builder.Logging.ClearProviders();
+builder.Services.AddSerilog((services, loggerConfiguration) =>
+{
+    loggerConfiguration
+        .Enrich.FromLogContext()
+        .WriteTo.Console();
+});
 
 builder.Services.Configure<BlockchainIndexerOptions>(
     builder.Configuration.GetSection("BlockchainIndexer"));
@@ -26,6 +38,11 @@ if (string.IsNullOrWhiteSpace(connectionString))
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddScoped<Application.Abstractions.ITrackedWalletRepository, TrackedWalletRepository>();
+builder.Services.AddMediatR(cfg =>
+{
+    cfg.RegisterServicesFromAssemblyContaining<AssemblyReference>();
+    cfg.AddOpenBehavior(typeof(RequestLoggingPipelineBehavior<,>));
+});
 
 builder.Services.AddSingleton<OnChainPipelineChannels>();
 builder.Services.AddSingleton<InMemoryCacheService>();

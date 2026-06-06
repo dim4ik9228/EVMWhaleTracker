@@ -58,17 +58,17 @@ public sealed class TrackedWallet
     {
         if (address is null)
         {
-            return Result<TrackedWallet>.Failure(Error.Validation("TrackedWallet.Address", "A tracked wallet address is required."));
+            return Result<TrackedWallet>.Failure(Errors.TrackedWallet.AddressRequired);
         }
 
         if (userId <= 0)
         {
-            return Result<TrackedWallet>.Failure(Error.Validation("TrackedWallet.UserId", "Telegram user ids must be positive."));
+            return Result<TrackedWallet>.Failure(Errors.TrackedWallet.UserIdMustBePositive);
         }
 
         if (minimumTransactionValue < 0m)
         {
-            return Result<TrackedWallet>.Failure(Error.Validation("TrackedWallet.MinimumTransactionValue", "Minimum transaction value cannot be negative."));
+            return Result<TrackedWallet>.Failure(Errors.TrackedWallet.MinimumTransactionValueMustBeNonNegative);
         }
 
         return Result<TrackedWallet>.Success(new TrackedWallet(
@@ -92,12 +92,12 @@ public sealed class TrackedWallet
     {
         if (userId <= 0)
         {
-            return Result<TrackedWallet>.Failure(Error.Validation("TrackedWallet.UserId", "Telegram user ids must be positive."));
+            return Result<TrackedWallet>.Failure(Errors.TrackedWallet.UserIdMustBePositive);
         }
 
         if (minimumTransactionValue < 0m)
         {
-            return Result<TrackedWallet>.Failure(Error.Validation("TrackedWallet.MinimumTransactionValue", "Minimum transaction value cannot be negative."));
+            return Result<TrackedWallet>.Failure(Errors.TrackedWallet.MinimumTransactionValueMustBeNonNegative);
         }
 
         var addressResult = Address.Create(address);
@@ -123,7 +123,7 @@ public sealed class TrackedWallet
     {
         if (minimumTransactionValue < 0m)
         {
-            return Result.Failure(Error.Validation("TrackedWallet.MinimumTransactionValue", "Minimum transaction value cannot be negative."));
+            return Result.Failure(Errors.TrackedWallet.MinimumTransactionValueMustBeNonNegative);
         }
 
         MinimumTransactionValue = minimumTransactionValue;

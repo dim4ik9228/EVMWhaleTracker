@@ -42,7 +42,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var payload in _channels.NotificationPayloadChannel.Reader.ReadAllAsync(stoppingToken).ConfigureAwait(false))
+        await foreach (var payload in _channels.NotificationPayloadChannel.Reader.ReadAllAsync(stoppingToken))
         {
             if (payload.TelegramUserId <= 0)
             {
@@ -54,13 +54,13 @@ public sealed class NotificationDispatcherWorker : BackgroundService
 
             try
             {
-                await chatLimiter.WaitAsync(stoppingToken).ConfigureAwait(false);
-                await _rateLimiter.WaitAsync(stoppingToken).ConfigureAwait(false);
+                await chatLimiter.WaitAsync(stoppingToken);
+                await _rateLimiter.WaitAsync(stoppingToken);
                 await _telegramBotClient.SendMessage(
                     chatId: payload.TelegramUserId,
                     text: payload.MarkdownMessage,
                     parseMode: ParseMode.Markdown,
-                    cancellationToken: stoppingToken).ConfigureAwait(false);
+                    cancellationToken: stoppingToken);
             }
             catch (ApiRequestException ex)
             {
@@ -83,15 +83,15 @@ public sealed class NotificationDispatcherWorker : BackgroundService
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        await base.StopAsync(cancellationToken).ConfigureAwait(false);
-        await _rateLimiter.DisposeAsync().ConfigureAwait(false);
+        await base.StopAsync(cancellationToken);
+        await _rateLimiter.DisposeAsync();
     }
 
     private static async Task ReleaseChatLimiterAfterDelayAsync(SemaphoreSlim chatLimiter, CancellationToken cancellationToken)
     {
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
             chatLimiter.Release();
         }
         catch (OperationCanceledException)

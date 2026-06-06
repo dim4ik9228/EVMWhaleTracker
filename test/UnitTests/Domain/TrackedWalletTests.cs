@@ -1,3 +1,4 @@
+using Domain.Common;
 using Domain.Entities;
 using Domain.ValueObjects;
 
@@ -46,7 +47,7 @@ public sealed class TrackedWalletTests
         var result = TrackedWallet.Create(LowercaseAddress, userId: 12345);
 
         Assert.True(result.IsFailure);
-        Assert.Equal("Address.Checksum", result.Error.Code);
+        Assert.Equal(Errors.Address.Checksum, result.Error);
     }
 
     [Fact]
@@ -67,7 +68,7 @@ public sealed class TrackedWalletTests
         var result = TrackedWallet.Create(ChecksummedAddress, userId: 0);
 
         Assert.True(result.IsFailure);
-        Assert.Equal("TrackedWallet.UserId", result.Error.Code);
+        Assert.Equal(Errors.TrackedWallet.UserIdMustBePositive, result.Error);
     }
 
     [Fact]
@@ -105,7 +106,7 @@ public sealed class TrackedWalletTests
             trackTokenTransfers: false);
 
         Assert.True(updateResult.IsFailure);
-        Assert.Equal("TrackedWallet.MinimumTransactionValue", updateResult.Error.Code);
+        Assert.Equal(Errors.TrackedWallet.MinimumTransactionValueMustBeNonNegative, updateResult.Error);
         Assert.Equal(2m, wallet.MinimumTransactionValue);
         Assert.True(wallet.TrackIncomingTransfers);
         Assert.True(wallet.TrackOutgoingTransfers);
@@ -119,6 +120,6 @@ public sealed class TrackedWalletTests
         var result = TrackedWallet.Create((Address?)null, userId: 12345);
 
         Assert.True(result.IsFailure);
-        Assert.Equal("TrackedWallet.Address", result.Error.Code);
+        Assert.Equal(Errors.TrackedWallet.AddressRequired, result.Error);
     }
 }
