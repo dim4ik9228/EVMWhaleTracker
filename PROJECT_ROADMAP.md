@@ -404,7 +404,7 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [x] Database migrations
 - [x] MediatR commands and handlers
 - [x] Telegram command receiving and routing
-- [ ] Startup cache synchronization
+- [x] Startup cache synchronization
 - [x] Runtime cache updates from add/remove commands
 - [ ] Minimum transaction value filtering
 - [ ] ERC-20 transfer event matching

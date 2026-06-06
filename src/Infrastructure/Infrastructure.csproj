@@ -13,6 +13,7 @@
     <PackageReference Include="Nethereum.RPC.Reactive" Version="6.1.0" />
     <PackageReference Include="Nethereum.JsonRpc.WebSocketClient" Version="6.1.0" />
     <PackageReference Include="Nethereum.Web3" Version="6.1.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <ItemGroup>

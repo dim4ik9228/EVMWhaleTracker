@@ -56,6 +56,7 @@ builder.Services.AddSingleton<TelegramGlobalRateLimiter>();
 builder.Services.AddSingleton<Application.Abstractions.ITrackedAddressCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
 builder.Services.AddSingleton<Application.Abstractions.ITrackedWalletCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
 builder.Services.AddScoped<ITelegramCommandProcessor, TelegramCommandProcessor>();
+builder.Services.AddHostedService<TrackedWalletCacheHydrationService>();
 
 var blockchainIndexerSection = builder.Configuration.GetSection("BlockchainIndexer");
 var httpRpcUrl = blockchainIndexerSection["HttpRpcUrl"];

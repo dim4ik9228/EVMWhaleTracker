@@ -1,0 +1,38 @@
+using Application.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace Presentation.Telegram.Services;
+
+public sealed class TrackedWalletCacheHydrationService : IHostedService
+{
+    private readonly IServiceScopeFactory _serviceScopeFactory;
+    private readonly ILogger<TrackedWalletCacheHydrationService> _logger;
+
+    public TrackedWalletCacheHydrationService(
+        IServiceScopeFactory serviceScopeFactory,
+        ILogger<TrackedWalletCacheHydrationService> logger)
+    {
+        ArgumentNullException.ThrowIfNull(serviceScopeFactory);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        _serviceScopeFactory = serviceScopeFactory;
+        _logger = logger;
+    }
+
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        using var scope = _serviceScopeFactory.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<ITrackedWalletRepository>();
+        var cache = scope.ServiceProvider.GetRequiredService<ITrackedWalletCacheService>();
+
+        var trackedWallets = await repository.ListAllAsync(cancellationToken);
+        cache.ReplaceAll(trackedWallets);
+
+        _logger.LogInformation("Hydrated tracked wallet cache with {TrackedWalletCount} wallets.", trackedWallets.Count);
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+        => Task.CompletedTask;
+}
