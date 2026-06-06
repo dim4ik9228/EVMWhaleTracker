@@ -4,6 +4,8 @@ This document describes the current state of the project and the remaining work 
 
 The short version: the background processing pipeline exists, but the product-facing pieces are still missing. We can ingest blocks, match them against an in-memory address cache, and dispatch Telegram notifications. What we do not yet have is persistent tracked-wallet storage, Telegram commands, startup cache hydration, or deployment wiring.
 
+Status: the end-to-end MVP flow is now implemented and validated on a real chain.
+
 ## Current State
 
 ### Implemented
@@ -412,3 +414,6 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [x] Dockerfile
 - [x] Docker Compose setup
 - [ ] Deployment configuration
+- [x] End-to-end MVP flow validated on a live chain
+- [ ] Support multiple chains simultaneously
+- [ ] Redesign Telegram notifications to match a drops-style bot message layout

@@ -54,6 +54,12 @@ public sealed class NotificationDispatcherWorker : BackgroundService
                     text: payload.MarkdownMessage,
                     parseMode: ParseMode.Markdown,
                     cancellationToken: stoppingToken);
+
+                _logger.LogInformation(
+                    "Sent Telegram notification to chat {ChatId} for wallet {WalletAddress} and transaction {TransactionHash}.",
+                    payload.TelegramUserId,
+                    payload.WalletAddress ?? string.Empty,
+                    payload.TransactionHash ?? string.Empty);
             }
             catch (ApiRequestException ex)
             {

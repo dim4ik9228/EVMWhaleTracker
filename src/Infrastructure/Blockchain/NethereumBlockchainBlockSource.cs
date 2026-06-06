@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using Application.Messaging;
@@ -17,6 +18,8 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
 {
     private readonly Web3 _web3;
     private readonly string? webSocketRpcUrl;
+    private readonly bool _enableRpcDiagnostics;
+    private readonly bool _enableTokenTransferReceiptFetching;
     private readonly ILogger<NethereumBlockchainBlockSource> _logger;
     private readonly IDisposable? _ownedTransport;
 
@@ -30,6 +33,8 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
         var settings = options.Value;
         _logger = logger;
         webSocketRpcUrl = settings.WebSocketRpcUrl;
+        _enableRpcDiagnostics = settings.EnableRpcDiagnostics;
+        _enableTokenTransferReceiptFetching = settings.EnableTokenTransferReceiptFetching;
 
         if (!string.IsNullOrWhiteSpace(settings.HttpRpcUrl))
         {
@@ -60,16 +65,23 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
 
     public async Task<RawBlockData?> GetBlockAsync(ulong blockNumber, CancellationToken cancellationToken)
     {
+        var stopwatch = _enableRpcDiagnostics ? Stopwatch.StartNew() : null;
         var block = await _web3.Eth.Blocks.GetBlockWithTransactionsByNumber
             .SendRequestAsync(new HexBigInteger(new BigInteger(blockNumber)));
 
         if (block is null)
         {
+            if (_enableRpcDiagnostics)
+            {
+                _logger.LogInformation("Block {BlockNumber} returned no data from RPC.", blockNumber);
+            }
+
             return null;
         }
 
         var transactions = new List<RawTransactionData>(block.Transactions.Length);
         var logs = new List<RawLogData>();
+        var receiptRequests = 0;
 
         foreach (var transaction in block.Transactions)
         {
@@ -78,6 +90,13 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
                 FromAddress: transaction.From,
                 ToAddress: transaction.To,
                 Value: Web3.Convert.FromWei(transaction.Value?.Value ?? BigInteger.Zero)));
+
+            if (!_enableTokenTransferReceiptFetching)
+            {
+                continue;
+            }
+
+            receiptRequests++;
 
             try
             {
@@ -108,12 +127,27 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
             ? DateTimeOffset.FromUnixTimeSeconds((long)unixSeconds)
             : DateTimeOffset.UnixEpoch;
 
-        return new RawBlockData(
+        var rawBlockData = new RawBlockData(
             BlockNumber: block.Number?.Value is { } value ? checked((ulong)value) : blockNumber,
             BlockHash: block.BlockHash ?? string.Empty,
             BlockTimestampUtc: timestamp,
             Transactions: transactions,
             Logs: logs);
+
+        if (_enableRpcDiagnostics)
+        {
+            stopwatch?.Stop();
+            _logger.LogDebug(
+                "Loaded block {BlockNumber}: transactions={TransactionCount}, receiptRequests={ReceiptRequestCount}, logs={LogCount}, elapsedMs={ElapsedMilliseconds}, receiptsEnabled={ReceiptsEnabled}.",
+                rawBlockData.BlockNumber,
+                transactions.Count,
+                receiptRequests,
+                logs.Count,
+                stopwatch?.ElapsedMilliseconds ?? 0,
+                _enableTokenTransferReceiptFetching);
+        }
+
+        return rawBlockData;
     }
 
     public async IAsyncEnumerable<ulong> StreamNewBlockNumbersAsync([EnumeratorCancellation] CancellationToken cancellationToken)

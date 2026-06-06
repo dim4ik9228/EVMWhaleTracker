@@ -2,6 +2,10 @@ namespace Infrastructure.Blockchain;
 
 public sealed class BlockchainIndexerOptions
 {
+    public bool EnableRpcDiagnostics { get; init; }
+
+    public bool EnableTokenTransferReceiptFetching { get; init; }
+
     public string? HttpRpcUrl { get; init; }
 
     public string? WebSocketRpcUrl { get; init; }

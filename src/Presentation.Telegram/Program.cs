@@ -26,8 +26,8 @@ builder.Logging.ClearProviders();
 builder.Services.AddSerilog((services, loggerConfiguration) =>
 {
     loggerConfiguration
-        .Enrich.FromLogContext()
-        .WriteTo.Console();
+        .ReadFrom.Configuration(builder.Configuration)
+        .ReadFrom.Services(services);
 });
 
 builder.Services.Configure<BlockchainIndexerOptions>(

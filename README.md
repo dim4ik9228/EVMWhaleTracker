@@ -19,3 +19,14 @@ docker compose up --build
 The generated `.env` is ignored by git and is used only for local development.
 
 Postgres data is stored in `.docker/postgres-data/`, so the database survives container recreation locally.
+
+### RPC debugging
+
+When you want to inspect Infura load, set:
+
+```env
+BLOCKCHAIN_ENABLE_RPC_DIAGNOSTICS=true
+BLOCKCHAIN_ENABLE_TOKEN_TRANSFER_RECEIPT_FETCHING=false
+```
+
+With diagnostics enabled, the app logs each block’s transaction count, how many receipt requests it made, how many logs it collected, and how long the block load took.
