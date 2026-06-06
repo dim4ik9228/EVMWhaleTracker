@@ -18,7 +18,7 @@ builder.Services.Configure<BlockchainIndexerOptions>(
 builder.Services.Configure<TelegramBotOptions>(
     builder.Configuration.GetSection("TelegramBot"));
 
-var connectionString = builder.Configuration.GetConnectionString("Default");
+var connectionString = builder.Configuration["ConnectionStrings:Default"];
 if (string.IsNullOrWhiteSpace(connectionString))
 {
     throw new InvalidOperationException("ConnectionStrings:Default must be configured.");
@@ -31,15 +31,31 @@ builder.Services.AddSingleton<OnChainPipelineChannels>();
 builder.Services.AddSingleton<InMemoryCacheService>();
 builder.Services.AddSingleton<Application.Abstractions.ITrackedAddressCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
 builder.Services.AddSingleton<Application.Abstractions.ITrackedWalletCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
-builder.Services.AddSingleton<IBlockchainBlockSource, NethereumBlockchainBlockSource>();
-builder.Services.AddHostedService<BlockchainIndexerWorker>();
-builder.Services.AddHostedService<WalletTrackerWorker>();
-builder.Services.AddSingleton<ITelegramBotClient>(sp =>
+
+var blockchainIndexerSection = builder.Configuration.GetSection("BlockchainIndexer");
+var httpRpcUrl = blockchainIndexerSection["HttpRpcUrl"];
+if (!string.IsNullOrWhiteSpace(httpRpcUrl))
 {
-    var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<TelegramBotOptions>>().Value;
-    return new TelegramBotClient(options.BotToken);
-});
-builder.Services.AddHostedService<NotificationDispatcherWorker>();
+    builder.Services.AddSingleton<IBlockchainBlockSource, NethereumBlockchainBlockSource>();
+    builder.Services.AddHostedService<BlockchainIndexerWorker>();
+    builder.Services.AddHostedService<WalletTrackerWorker>();
+}
+else
+{
+    Console.WriteLine("BlockchainIndexer:HttpRpcUrl is not configured. Blockchain workers are disabled.");
+}
+
+var telegramSection = builder.Configuration.GetSection("TelegramBot");
+var botToken = telegramSection["BotToken"];
+if (!string.IsNullOrWhiteSpace(botToken))
+{
+    builder.Services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(botToken));
+    builder.Services.AddHostedService<NotificationDispatcherWorker>();
+}
+else
+{
+    Console.WriteLine("TelegramBot:BotToken is not configured. Notification dispatcher is disabled.");
+}
 
 var host = builder.Build();
 await host.RunAsync();

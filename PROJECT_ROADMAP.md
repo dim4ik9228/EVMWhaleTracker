@@ -409,6 +409,6 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [ ] Minimum transaction value filtering
 - [ ] ERC-20 transfer event matching
 - [ ] Telegram Markdown escaping
-- [ ] Dockerfile
-- [ ] Docker Compose setup
+- [x] Dockerfile
+- [x] Docker Compose setup
 - [ ] Deployment configuration

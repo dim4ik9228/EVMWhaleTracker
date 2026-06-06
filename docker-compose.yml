@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: evmwhaletracker-postgres
+    environment:
+      POSTGRES_DB: EvmWhaleTracker
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d EvmWhaleTracker"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: evmwhaletracker-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=EvmWhaleTracker;Username=postgres;Password=postgres
+      TelegramBot__BotToken: ${TELEGRAM_BOT_TOKEN:-}
+      BlockchainIndexer__HttpRpcUrl: ${BLOCKCHAIN_HTTP_RPC_URL:-}
+      BlockchainIndexer__WebSocketRpcUrl: ${BLOCKCHAIN_WEB_SOCKET_RPC_URL:-}
+      BlockchainIndexer__PreferWebSocket: "true"
+      BlockchainIndexer__PollInterval: "00:00:02"
+      BlockchainIndexer__WebSocketReconnectDelay: "00:00:05"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
