@@ -1,0 +1,104 @@
+using Domain.Entities;
+using Domain.ValueObjects;
+
+namespace UnitTests.Domain;
+
+public sealed class TrackedWalletTests
+{
+    private const string LowercaseAddress = "0x52908400098527886e0f7030069857d2e4169ee7";
+
+    private static string ChecksummedAddress => Address.Normalize(LowercaseAddress).Value.Value;
+
+    [Fact]
+    public void Create_WithNormalizedAddress_SucceedsAndStoresConfiguration()
+    {
+        var result = TrackedWallet.Create(
+            ChecksummedAddress,
+            userId: 12345,
+            minimumTransactionValue: 1.5m,
+            trackIncomingTransfers: true,
+            trackOutgoingTransfers: false,
+            trackTokenTransfers: true);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ChecksummedAddress, result.Value.Address.Value);
+        Assert.Equal(12345, result.Value.UserId);
+        Assert.Equal(1.5m, result.Value.MinimumTransactionValue);
+        Assert.True(result.Value.TrackIncomingTransfers);
+        Assert.False(result.Value.TrackOutgoingTransfers);
+        Assert.True(result.Value.TrackTokenTransfers);
+        Assert.NotEqual(default, result.Value.Id);
+        Assert.NotEqual(default, result.Value.CreatedAtUtc);
+        Assert.Null(result.Value.UpdatedAtUtc);
+    }
+
+    [Fact]
+    public void Create_WithLowercaseAddress_FailsBecauseTrackedWalletRequiresChecksummedInput()
+    {
+        var result = TrackedWallet.Create(LowercaseAddress, userId: 12345);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("Address.Checksum", result.Error.Code);
+    }
+
+    [Fact]
+    public void Create_WithLowercaseAddressAfterNormalization_Succeeds()
+    {
+        var result = TrackedWallet.Create(ChecksummedAddress, userId: 12345);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(ChecksummedAddress, result.Value.Address.Value);
+    }
+
+    [Fact]
+    public void Create_WithInvalidUserId_Fails()
+    {
+        var result = TrackedWallet.Create(ChecksummedAddress, userId: 0);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("TrackedWallet.UserId", result.Error.Code);
+    }
+
+    [Fact]
+    public void UpdateTrackingConfiguration_ChangesSettingsAndSetsUpdatedTimestamp()
+    {
+        var createResult = TrackedWallet.Create(ChecksummedAddress, userId: 12345);
+        Assert.True(createResult.IsSuccess);
+
+        var wallet = createResult.Value;
+        var updateResult = wallet.UpdateTrackingConfiguration(
+            minimumTransactionValue: 10m,
+            trackIncomingTransfers: false,
+            trackOutgoingTransfers: true,
+            trackTokenTransfers: false);
+
+        Assert.True(updateResult.IsSuccess);
+        Assert.Equal(10m, wallet.MinimumTransactionValue);
+        Assert.False(wallet.TrackIncomingTransfers);
+        Assert.True(wallet.TrackOutgoingTransfers);
+        Assert.False(wallet.TrackTokenTransfers);
+        Assert.NotNull(wallet.UpdatedAtUtc);
+    }
+
+    [Fact]
+    public void UpdateTrackingConfiguration_WithNegativeValue_FailsAndKeepsExistingSettings()
+    {
+        var createResult = TrackedWallet.Create(ChecksummedAddress, userId: 12345, minimumTransactionValue: 2m);
+        Assert.True(createResult.IsSuccess);
+
+        var wallet = createResult.Value;
+        var updateResult = wallet.UpdateTrackingConfiguration(
+            minimumTransactionValue: -1m,
+            trackIncomingTransfers: false,
+            trackOutgoingTransfers: false,
+            trackTokenTransfers: false);
+
+        Assert.True(updateResult.IsFailure);
+        Assert.Equal("TrackedWallet.MinimumTransactionValue", updateResult.Error.Code);
+        Assert.Equal(2m, wallet.MinimumTransactionValue);
+        Assert.True(wallet.TrackIncomingTransfers);
+        Assert.True(wallet.TrackOutgoingTransfers);
+        Assert.True(wallet.TrackTokenTransfers);
+        Assert.Null(wallet.UpdatedAtUtc);
+    }
+}

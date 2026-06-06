@@ -28,11 +28,11 @@ public sealed class InMemoryCacheServiceTests
         var firstWallet = CreateTrackedWallet(1111);
         var secondWallet = CreateTrackedWallet(2222);
 
-        cache.ReplaceAll(new[] { firstWallet, secondWallet });
+        cache.ReplaceAll([firstWallet, secondWallet]);
 
         Assert.True(cache.Contains(firstWallet.Address));
         Assert.True(cache.TryGetTelegramUserIds(firstWallet.Address, out var telegramUserIds));
-        Assert.Equal(new long[] { 1111, 2222 }, telegramUserIds.OrderBy(value => value));
+        Assert.Equal([1111, 2222], telegramUserIds.OrderBy(value => value));
     }
 
     [Fact]
