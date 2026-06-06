@@ -1,8 +1,6 @@
 using Application.Messaging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Presentation.Telegram.Configuration;
 using Presentation.Telegram.Services;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
@@ -21,23 +19,18 @@ public sealed class NotificationDispatcherWorker : BackgroundService
     public NotificationDispatcherWorker(
         OnChainPipelineChannels channels,
         ITelegramBotClient telegramBotClient,
-        IOptions<TelegramBotOptions> options,
+        TelegramGlobalRateLimiter rateLimiter,
         ILogger<NotificationDispatcherWorker> logger)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(telegramBotClient);
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(rateLimiter);
         ArgumentNullException.ThrowIfNull(logger);
-
-        if (string.IsNullOrWhiteSpace(options.Value.BotToken))
-        {
-            throw new InvalidOperationException("TelegramBot:BotToken must be configured.");
-        }
 
         _channels = channels;
         _telegramBotClient = telegramBotClient;
         _logger = logger;
-        _rateLimiter = new TelegramGlobalRateLimiter(30);
+        _rateLimiter = rateLimiter;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -84,7 +77,6 @@ public sealed class NotificationDispatcherWorker : BackgroundService
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         await base.StopAsync(cancellationToken);
-        await _rateLimiter.DisposeAsync();
     }
 
     private static async Task ReleaseChatLimiterAfterDelayAsync(SemaphoreSlim chatLimiter, CancellationToken cancellationToken)

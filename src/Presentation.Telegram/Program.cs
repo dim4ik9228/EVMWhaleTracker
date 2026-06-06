@@ -5,16 +5,22 @@ using Infrastructure.Persistence;
 using Infrastructure.Workers;
 using Application.Behaviors;
 using Application;
+using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Serilog;
 using Presentation.Telegram.Configuration;
+using Presentation.Telegram.Commands;
+using Presentation.Telegram.Handlers;
+using Presentation.Telegram.Services;
 using Presentation.Telegram.Workers;
 using Telegram.Bot;
-using Microsoft.Extensions.Logging;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+builder.Configuration.AddUserSecrets<Program>(optional: true, reloadOnChange: true);
 
 builder.Logging.ClearProviders();
 builder.Services.AddSerilog((services, loggerConfiguration) =>
@@ -46,8 +52,10 @@ builder.Services.AddMediatR(cfg =>
 
 builder.Services.AddSingleton<OnChainPipelineChannels>();
 builder.Services.AddSingleton<InMemoryCacheService>();
+builder.Services.AddSingleton<TelegramGlobalRateLimiter>();
 builder.Services.AddSingleton<Application.Abstractions.ITrackedAddressCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
 builder.Services.AddSingleton<Application.Abstractions.ITrackedWalletCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
+builder.Services.AddScoped<ITelegramCommandProcessor, TelegramCommandProcessor>();
 
 var blockchainIndexerSection = builder.Configuration.GetSection("BlockchainIndexer");
 var httpRpcUrl = blockchainIndexerSection["HttpRpcUrl"];
@@ -67,11 +75,13 @@ var botToken = telegramSection["BotToken"];
 if (!string.IsNullOrWhiteSpace(botToken))
 {
     builder.Services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(botToken));
+    builder.Services.AddSingleton<TelegramCommandUpdateHandler>();
+    builder.Services.AddHostedService<TelegramUpdateReceiverWorker>();
     builder.Services.AddHostedService<NotificationDispatcherWorker>();
 }
 else
 {
-    Console.WriteLine("TelegramBot:BotToken is not configured. Notification dispatcher is disabled.");
+    Console.WriteLine("TelegramBot:BotToken is not configured. Telegram workers are disabled.");
 }
 
 var host = builder.Build();
