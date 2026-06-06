@@ -398,7 +398,7 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [x] Notification dispatcher worker
 - [x] In-memory tracked address cache
 - [x] Unit tests for core domain/cache/worker behavior
-- [ ] `TrackedWallet.Create(Address address, ...)` overload
+- [x] `TrackedWallet.Create(Address address, ...)` overload
 - [ ] EF Core database context
 - [ ] Tracked wallet persistence
 - [ ] Database migrations

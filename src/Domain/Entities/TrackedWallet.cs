@@ -49,6 +49,40 @@ public sealed class TrackedWallet
     }
 
     public static Result<TrackedWallet> Create(
+        Address? address,
+        long userId,
+        decimal minimumTransactionValue = 0m,
+        bool trackIncomingTransfers = true,
+        bool trackOutgoingTransfers = true,
+        bool trackTokenTransfers = true)
+    {
+        if (address is null)
+        {
+            return Result<TrackedWallet>.Failure(Error.Validation("TrackedWallet.Address", "A tracked wallet address is required."));
+        }
+
+        if (userId <= 0)
+        {
+            return Result<TrackedWallet>.Failure(Error.Validation("TrackedWallet.UserId", "Telegram user ids must be positive."));
+        }
+
+        if (minimumTransactionValue < 0m)
+        {
+            return Result<TrackedWallet>.Failure(Error.Validation("TrackedWallet.MinimumTransactionValue", "Minimum transaction value cannot be negative."));
+        }
+
+        return Result<TrackedWallet>.Success(new TrackedWallet(
+            Guid.NewGuid(),
+            address,
+            userId,
+            minimumTransactionValue,
+            trackIncomingTransfers,
+            trackOutgoingTransfers,
+            trackTokenTransfers,
+            DateTimeOffset.UtcNow));
+    }
+
+    public static Result<TrackedWallet> Create(
         string address,
         long userId,
         decimal minimumTransactionValue = 0m,
@@ -72,15 +106,13 @@ public sealed class TrackedWallet
             return Result<TrackedWallet>.Failure(addressResult.Error);
         }
 
-        return Result<TrackedWallet>.Success(new TrackedWallet(
-            Guid.NewGuid(),
+        return Create(
             addressResult.Value,
             userId,
             minimumTransactionValue,
             trackIncomingTransfers,
             trackOutgoingTransfers,
-            trackTokenTransfers,
-            DateTimeOffset.UtcNow));
+            trackTokenTransfers);
     }
 
     public Result UpdateTrackingConfiguration(

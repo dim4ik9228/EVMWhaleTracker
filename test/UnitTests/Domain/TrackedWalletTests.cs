@@ -7,10 +7,18 @@ public sealed class TrackedWalletTests
 {
     private const string LowercaseAddress = "0x52908400098527886e0f7030069857d2e4169ee7";
 
-    private static string ChecksummedAddress => Address.Normalize(LowercaseAddress).Value.Value;
+    private static Address ChecksummedAddress
+    {
+        get
+        {
+            var result = Address.Normalize(LowercaseAddress);
+            Assert.True(result.IsSuccess);
+            return result.Value;
+        }
+    }
 
     [Fact]
-    public void Create_WithNormalizedAddress_SucceedsAndStoresConfiguration()
+    public void Create_WithAddressValueObject_SucceedsAndStoresConfiguration()
     {
         var result = TrackedWallet.Create(
             ChecksummedAddress,
@@ -21,7 +29,7 @@ public sealed class TrackedWalletTests
             trackTokenTransfers: true);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(ChecksummedAddress, result.Value.Address.Value);
+        Assert.Equal(ChecksummedAddress, result.Value.Address);
         Assert.Equal(12345, result.Value.UserId);
         Assert.Equal(1.5m, result.Value.MinimumTransactionValue);
         Assert.True(result.Value.TrackIncomingTransfers);
@@ -44,10 +52,13 @@ public sealed class TrackedWalletTests
     [Fact]
     public void Create_WithLowercaseAddressAfterNormalization_Succeeds()
     {
-        var result = TrackedWallet.Create(ChecksummedAddress, userId: 12345);
+        var normalizedAddress = Address.Normalize(LowercaseAddress);
+        Assert.True(normalizedAddress.IsSuccess);
+
+        var result = TrackedWallet.Create(normalizedAddress.Value, userId: 12345);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(ChecksummedAddress, result.Value.Address.Value);
+        Assert.Equal(normalizedAddress.Value, result.Value.Address);
     }
 
     [Fact]
@@ -100,5 +111,14 @@ public sealed class TrackedWalletTests
         Assert.True(wallet.TrackOutgoingTransfers);
         Assert.True(wallet.TrackTokenTransfers);
         Assert.Null(wallet.UpdatedAtUtc);
+    }
+
+    [Fact]
+    public void Create_WithNullAddress_Fails()
+    {
+        var result = TrackedWallet.Create((Address?)null, userId: 12345);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal("TrackedWallet.Address", result.Error.Code);
     }
 }
