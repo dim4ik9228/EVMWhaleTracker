@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Attach to EVMWhaleTracker (Compose)",
+      "type": "docker",
+      "request": "attach",
+      "platform": "netCore",
+      "containerName": "evmwhaletracker-app"
+    }
+  ]
+}
