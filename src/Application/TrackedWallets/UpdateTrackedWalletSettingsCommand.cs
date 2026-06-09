@@ -9,4 +9,6 @@ public sealed record UpdateTrackedWalletSettingsCommand(
     decimal MinimumTransactionValue,
     bool TrackIncomingTransfers,
     bool TrackOutgoingTransfers,
-    bool TrackTokenTransfers) : IRequest<Result<TrackedWalletDetails>>;
+    bool TrackTokenTransfers,
+    string? Alias = null,
+    IReadOnlyCollection<SupportedChain>? EnabledChains = null) : IRequest<Result<TrackedWalletDetails>>;

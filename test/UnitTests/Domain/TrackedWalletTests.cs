@@ -27,15 +27,19 @@ public sealed class TrackedWalletTests
             minimumTransactionValue: 1.5m,
             trackIncomingTransfers: true,
             trackOutgoingTransfers: false,
-            trackTokenTransfers: true);
+            trackTokenTransfers: true,
+            alias: "MEXC Hot Wallet",
+            enabledChains: [SupportedChain.Bsc, SupportedChain.Base]);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(ChecksummedAddress, result.Value.Address);
         Assert.Equal(12345, result.Value.UserId);
         Assert.Equal(1.5m, result.Value.MinimumTransactionValue);
+        Assert.Equal("MEXC Hot Wallet", result.Value.Alias);
         Assert.True(result.Value.TrackIncomingTransfers);
         Assert.False(result.Value.TrackOutgoingTransfers);
         Assert.True(result.Value.TrackTokenTransfers);
+        Assert.Equal([SupportedChain.Bsc, SupportedChain.Base], result.Value.EnabledChains);
         Assert.NotEqual(default, result.Value.Id);
         Assert.NotEqual(default, result.Value.CreatedAtUtc);
         Assert.Null(result.Value.UpdatedAtUtc);
@@ -82,13 +86,17 @@ public sealed class TrackedWalletTests
             minimumTransactionValue: 10m,
             trackIncomingTransfers: false,
             trackOutgoingTransfers: true,
-            trackTokenTransfers: false);
+            trackTokenTransfers: false,
+            alias: "Treasury",
+            enabledChains: [SupportedChain.Ethereum, SupportedChain.Base]);
 
         Assert.True(updateResult.IsSuccess);
         Assert.Equal(10m, wallet.MinimumTransactionValue);
+        Assert.Equal("Treasury", wallet.Alias);
         Assert.False(wallet.TrackIncomingTransfers);
         Assert.True(wallet.TrackOutgoingTransfers);
         Assert.False(wallet.TrackTokenTransfers);
+        Assert.Equal([SupportedChain.Ethereum, SupportedChain.Base], wallet.EnabledChains);
         Assert.NotNull(wallet.UpdatedAtUtc);
     }
 

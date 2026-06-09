@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Domain.Common;
 using Domain.ValueObjects;
 
@@ -5,6 +6,9 @@ namespace Domain.Entities;
 
 public sealed class TrackedWallet
 {
+    private const int MaxAliasLength = 100;
+    private string _enabledChainsJson = "[]";
+
     public Guid Id { get; private set; }
 
     public Address Address { get; private set; } = null!;
@@ -13,11 +17,15 @@ public sealed class TrackedWallet
 
     public decimal MinimumTransactionValue { get; private set; }
 
+    public string? Alias { get; private set; }
+
     public bool TrackIncomingTransfers { get; private set; }
 
     public bool TrackOutgoingTransfers { get; private set; }
 
     public bool TrackTokenTransfers { get; private set; }
+
+    public IReadOnlyCollection<SupportedChain> EnabledChains => DeserializeEnabledChains(_enabledChainsJson);
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
 
@@ -36,15 +44,19 @@ public sealed class TrackedWallet
         bool trackIncomingTransfers,
         bool trackOutgoingTransfers,
         bool trackTokenTransfers,
+        string? alias,
+        IReadOnlyCollection<SupportedChain> enabledChains,
         DateTimeOffset createdAtUtc)
     {
         Id = id;
         Address = address;
         UserId = userId;
         MinimumTransactionValue = minimumTransactionValue;
+        Alias = alias;
         TrackIncomingTransfers = trackIncomingTransfers;
         TrackOutgoingTransfers = trackOutgoingTransfers;
         TrackTokenTransfers = trackTokenTransfers;
+        _enabledChainsJson = SerializeEnabledChains(enabledChains);
         CreatedAtUtc = createdAtUtc;
     }
 
@@ -54,7 +66,9 @@ public sealed class TrackedWallet
         decimal minimumTransactionValue = 0m,
         bool trackIncomingTransfers = true,
         bool trackOutgoingTransfers = true,
-        bool trackTokenTransfers = true)
+        bool trackTokenTransfers = true,
+        string? alias = null,
+        IEnumerable<SupportedChain>? enabledChains = null)
     {
         if (address is null)
         {
@@ -71,6 +85,14 @@ public sealed class TrackedWallet
             return Result<TrackedWallet>.Failure(Errors.TrackedWallet.MinimumTransactionValueMustBeNonNegative);
         }
 
+        var aliasResult = NormalizeAlias(alias);
+        if (aliasResult.IsFailure)
+        {
+            return Result<TrackedWallet>.Failure(aliasResult.Error);
+        }
+
+        var enabledChainsResult = NormalizeEnabledChains(enabledChains);
+
         return Result<TrackedWallet>.Success(new TrackedWallet(
             Guid.NewGuid(),
             address,
@@ -79,6 +101,8 @@ public sealed class TrackedWallet
             trackIncomingTransfers,
             trackOutgoingTransfers,
             trackTokenTransfers,
+            aliasResult.Value,
+            enabledChainsResult,
             DateTimeOffset.UtcNow));
     }
 
@@ -88,7 +112,9 @@ public sealed class TrackedWallet
         decimal minimumTransactionValue = 0m,
         bool trackIncomingTransfers = true,
         bool trackOutgoingTransfers = true,
-        bool trackTokenTransfers = true)
+        bool trackTokenTransfers = true,
+        string? alias = null,
+        IEnumerable<SupportedChain>? enabledChains = null)
     {
         if (userId <= 0)
         {
@@ -98,6 +124,12 @@ public sealed class TrackedWallet
         if (minimumTransactionValue < 0m)
         {
             return Result<TrackedWallet>.Failure(Errors.TrackedWallet.MinimumTransactionValueMustBeNonNegative);
+        }
+
+        var aliasResult = NormalizeAlias(alias);
+        if (aliasResult.IsFailure)
+        {
+            return Result<TrackedWallet>.Failure(aliasResult.Error);
         }
 
         var addressResult = Address.Create(address);
@@ -112,26 +144,86 @@ public sealed class TrackedWallet
             minimumTransactionValue,
             trackIncomingTransfers,
             trackOutgoingTransfers,
-            trackTokenTransfers);
+            trackTokenTransfers,
+            aliasResult.Value,
+            enabledChains);
     }
 
     public Result UpdateTrackingConfiguration(
         decimal minimumTransactionValue,
         bool trackIncomingTransfers,
         bool trackOutgoingTransfers,
-        bool trackTokenTransfers)
+        bool trackTokenTransfers,
+        string? alias = null,
+        IEnumerable<SupportedChain>? enabledChains = null)
     {
         if (minimumTransactionValue < 0m)
         {
             return Result.Failure(Errors.TrackedWallet.MinimumTransactionValueMustBeNonNegative);
         }
 
+        var aliasResult = NormalizeAlias(alias);
+        if (aliasResult.IsFailure)
+        {
+            return Result.Failure(aliasResult.Error);
+        }
+
         MinimumTransactionValue = minimumTransactionValue;
         TrackIncomingTransfers = trackIncomingTransfers;
         TrackOutgoingTransfers = trackOutgoingTransfers;
         TrackTokenTransfers = trackTokenTransfers;
+
+        if (alias is not null)
+        {
+            Alias = aliasResult.Value;
+        }
+
+        if (enabledChains is not null)
+        {
+            _enabledChainsJson = SerializeEnabledChains(enabledChains);
+        }
+
         UpdatedAtUtc = DateTimeOffset.UtcNow;
 
         return Result.Success();
+    }
+
+    private static Result<string?> NormalizeAlias(string? alias)
+    {
+        if (string.IsNullOrWhiteSpace(alias))
+        {
+            return Result<string?>.Success(null);
+        }
+
+        var normalizedAlias = alias.Trim();
+        if (normalizedAlias.Length > MaxAliasLength)
+        {
+            return Result<string?>.Failure(Errors.TrackedWallet.AliasTooLong);
+        }
+
+        return Result<string?>.Success(normalizedAlias);
+    }
+
+    private static List<SupportedChain> NormalizeEnabledChains(IEnumerable<SupportedChain>? enabledChains)
+    {
+        if (enabledChains is null)
+        {
+            return [];
+        }
+
+        return enabledChains.Distinct().ToList();
+    }
+
+    private static string SerializeEnabledChains(IEnumerable<SupportedChain>? enabledChains)
+        => JsonSerializer.Serialize(NormalizeEnabledChains(enabledChains), (JsonSerializerOptions?)null);
+
+    private static List<SupportedChain> DeserializeEnabledChains(string? enabledChainsJson)
+    {
+        if (string.IsNullOrWhiteSpace(enabledChainsJson))
+        {
+            return [];
+        }
+
+        return JsonSerializer.Deserialize<List<SupportedChain>>(enabledChainsJson, (JsonSerializerOptions?)null) ?? [];
     }
 }

@@ -32,7 +32,9 @@ public sealed class UpdateTrackedWalletSettingsCommandHandler(ITrackedWalletRepo
             request.MinimumTransactionValue,
             request.TrackIncomingTransfers,
             request.TrackOutgoingTransfers,
-            request.TrackTokenTransfers);
+            request.TrackTokenTransfers,
+            request.Alias,
+            request.EnabledChains);
 
         if (updateResult.IsFailure)
         {

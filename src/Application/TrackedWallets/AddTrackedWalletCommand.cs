@@ -9,4 +9,6 @@ public sealed record AddTrackedWalletCommand(
     decimal MinimumTransactionValue = 0m,
     bool TrackIncomingTransfers = true,
     bool TrackOutgoingTransfers = true,
-    bool TrackTokenTransfers = true) : IRequest<Result<TrackedWalletDetails>>;
+    bool TrackTokenTransfers = true,
+    string? Alias = null,
+    IReadOnlyCollection<SupportedChain>? EnabledChains = null) : IRequest<Result<TrackedWalletDetails>>;

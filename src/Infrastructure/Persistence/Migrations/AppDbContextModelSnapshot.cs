@@ -33,6 +33,10 @@ namespace Infrastructure.Persistence.Migrations
                         .HasMaxLength(42)
                         .HasColumnType("character varying(42)");
 
+                    b.Property<string>("Alias")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<DateTimeOffset>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -54,6 +58,13 @@ namespace Infrastructure.Persistence.Migrations
 
                     b.Property<long>("UserId")
                         .HasColumnType("bigint");
+
+                    b.Property<string>("_enabledChainsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]")
+                        .HasColumnName("EnabledChains");
 
                     b.HasKey("Id");
 

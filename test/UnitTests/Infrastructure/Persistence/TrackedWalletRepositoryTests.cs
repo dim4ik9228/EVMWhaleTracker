@@ -1,4 +1,5 @@
 using Domain.Entities;
+using Domain.Common;
 using Domain.ValueObjects;
 using Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
@@ -25,6 +26,8 @@ public sealed class TrackedWalletRepositoryTests
 
         Assert.NotNull(fetched);
         Assert.Equal(wallet.Id, fetched.Id);
+        Assert.Equal(wallet.Alias, fetched.Alias);
+        Assert.Equal(wallet.EnabledChains, fetched.EnabledChains);
         Assert.Single(allWallets);
         Assert.Single(userWallets);
     }
@@ -66,7 +69,12 @@ public sealed class TrackedWalletRepositoryTests
         var normalizedAddressResult = Address.Normalize(LowercaseAddress);
         Assert.True(normalizedAddressResult.IsSuccess);
 
-        var result = TrackedWallet.Create(normalizedAddressResult.Value, userId, minimumTransactionValue: 2m);
+        var result = TrackedWallet.Create(
+            normalizedAddressResult.Value,
+            userId,
+            minimumTransactionValue: 2m,
+            alias: "MEXC Hot Wallet",
+            enabledChains: [SupportedChain.Bsc, SupportedChain.Base]);
         Assert.True(result.IsSuccess);
         return result.Value;
     }

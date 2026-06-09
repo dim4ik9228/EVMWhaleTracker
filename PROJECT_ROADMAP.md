@@ -125,6 +125,7 @@ Tasks:
 - Add EF mapping for:
   - `TrackedWallet`
   - `Address` value object
+- [x] Persist an optional wallet alias/display name alongside the tracked wallet.
 - Add an initial migration.
 - Add database configuration to `appsettings.json`.
 
@@ -157,6 +158,7 @@ Tasks:
 - Normalize raw address strings in the handler or in a small application-level parsing service.
 - Save changes through repository abstractions.
 - Update `InMemoryCacheService` after successful add/remove operations.
+- Update the cache and stored entity after settings changes.
 
 Recommended handler flow for `/add`:
 
@@ -265,7 +267,16 @@ Needed improvements:
 - Respect `TrackTokenTransfers`.
 - Add ERC-20 transfer log matching by checking the `Transfer(address,address,uint256)` topic.
 - Match token transfer `from` and `to` addresses inside log topics, not only the contract address.
+- Resolve the specific token metadata for each transfer:
+  - token symbol
+  - token contract address
+  - token decimals
+- Include the USD value of each transfer alongside the native/token amount.
 - Include chain/network information in notifications.
+- Keep block number available for debugging and test runs, but make it optional in the final user-facing layout.
+- Surface the tracked wallet alias in the notification when one exists.
+- Prefer known exchange/hot-wallet labels from chain scans when available, while still allowing manual aliases to win.
+- Add an explorer link for the transaction or token transfer if the chain supports a public explorer.
 
 Design note:
 
@@ -278,7 +289,33 @@ Recommended tests:
 - Transaction below minimum value is ignored.
 - ERC-20 transfer log emits a notification when the tracked address appears in indexed topics.
 
-## Phase 7: Harden Notification Dispatch
+## Phase 7: Redesign Notification Payload
+
+Goal: make Telegram notifications feel useful at a glance, like a compact drops-style alert.
+
+Tasks:
+
+- Redesign the Telegram message template around a compact title, value summary, and metadata footer.
+- Show the wallet alias first when available, with the address as a secondary detail.
+- Show the chain/network name prominently so cross-chain activity is obvious.
+- Show the specific token/currency name and amount in the main body.
+- Show the USD estimate in the same message, ideally close to the amount line.
+- Include the transaction status or confirmation depth when available.
+- Attach a price source and timestamp to the USD estimate if the pricing data can vary.
+- Include gas fee / gas used information when available.
+- Keep block number behind a debug/test toggle or lower-visibility line.
+- Include a transaction hash and explorer link for quick verification.
+- Keep the layout readable on mobile Telegram clients.
+
+Recommended tests:
+
+- Notification renders correctly for native transfers.
+- Notification renders correctly for ERC-20 transfers.
+- Alias appears when manually configured.
+- Auto-detected wallet labels can appear without overriding a manual alias.
+- Block number can be omitted from the public layout without breaking the message.
+
+## Phase 8: Harden Notification Dispatch
 
 Goal: make Telegram delivery reliable without overwhelming the API.
 
@@ -302,7 +339,7 @@ Recommended tests:
 - Dispatcher skips invalid Telegram user ids.
 - Dispatcher handles Telegram API exceptions without stopping the worker.
 
-## Phase 8: Configuration And Secrets
+## Phase 9: Configuration And Secrets
 
 Goal: make local and deployed configuration predictable.
 
@@ -338,7 +375,7 @@ Recommended settings:
 }
 ```
 
-## Phase 9: Dockerize The Application
+## Phase 10: Dockerize The Application
 
 Goal: make the MVP deployable.
 
@@ -357,7 +394,7 @@ Important note:
 
 The Dockerfile in `agents.md` is a blueprint, but the current repo paths include `src/Presentation.Telegram`, `src/Infrastructure`, `src/Application`, and `src/Domain`. The Dockerfile should match the actual folder layout.
 
-## Phase 10: Integration Testing And Observability
+## Phase 11: Integration Testing And Observability
 
 Goal: catch failures that unit tests cannot see.
 
@@ -408,8 +445,11 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [x] Telegram command receiving and routing
 - [x] Startup cache synchronization
 - [x] Runtime cache updates from add/remove commands
+- [x] Wallet aliases
 - [ ] Minimum transaction value filtering
 - [ ] ERC-20 transfer event matching
+- [ ] Token metadata resolution
+- [ ] USD valuation on notifications
 - [ ] Telegram Markdown escaping
 - [x] Dockerfile
 - [x] Docker Compose setup
@@ -417,3 +457,31 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [x] End-to-end MVP flow validated on a live chain
 - [ ] Support multiple chains simultaneously
 - [ ] Redesign Telegram notifications to match a drops-style bot message layout
+- [ ] Auto-detected wallet labels from chain scans
+- [ ] Transaction explorer links in notifications
+- [ ] Inline notification edit menu for alias, minimum value, and chain preferences
+
+## Phase 12: Inline Notification Editing
+
+Goal: turn notifications into actionable controls before release.
+
+Tasks:
+
+- Add an inline keyboard to the Telegram notification with a pencil/edit action.
+- Open a compact settings menu from the notification instead of forcing users to use text commands.
+- Allow users to edit:
+  - wallet alias
+  - minimum transaction value
+  - included chains/networks
+  - transfer direction preferences
+- Persist changes immediately and refresh the in-memory cache after confirmation.
+- Keep the command-based flow available as a fallback, but make the notification-driven editor the primary UX.
+- Add callback-query handling and validation for the edit flow.
+
+Recommended tests:
+
+- Edit menu opens from the notification.
+- Alias updates persist and are reflected in future notifications.
+- Minimum value updates persist and affect matching.
+- Chain preference updates persist and affect matching.
+- Invalid edits return a friendly error and leave the old settings intact.

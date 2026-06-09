@@ -71,7 +71,9 @@ public sealed class TelegramCommandProcessorTests
                         false,
                         true,
                         DateTimeOffset.UtcNow,
-                        null)
+                        null,
+                        "MEXC Hot Wallet",
+                        [SupportedChain.Bsc, SupportedChain.Base])
                 ])
         };
         var processor = new TelegramCommandProcessor(sender);
@@ -82,8 +84,10 @@ public sealed class TelegramCommandProcessorTests
 
         Assert.NotNull(response);
         Assert.Contains("Tracked wallets:", response!.Text);
+        Assert.Contains("Alias:", response.Text);
         Assert.Contains("Minimum transaction value:", response.Text);
         Assert.Contains("Outgoing: <code>off</code>", response.Text);
+        Assert.Contains("Enabled chains:", response.Text);
     }
 
     [Fact]
@@ -132,7 +136,9 @@ public sealed class TelegramCommandProcessorTests
                 true,
                 true,
                 DateTimeOffset.UtcNow,
-                null));
+                null,
+                null,
+                []));
 
         public Result<IReadOnlyList<TrackedWalletDetails>> ListResult { get; set; } = Result<IReadOnlyList<TrackedWalletDetails>>.Success([]);
 

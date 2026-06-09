@@ -1,4 +1,5 @@
 using Domain.Entities;
+using Domain.Common;
 
 namespace Application.TrackedWallets;
 
@@ -11,7 +12,9 @@ public sealed record TrackedWalletDetails(
     bool TrackOutgoingTransfers,
     bool TrackTokenTransfers,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset? UpdatedAtUtc)
+    DateTimeOffset? UpdatedAtUtc,
+    string? Alias = null,
+    IReadOnlyCollection<SupportedChain>? EnabledChains = null)
 {
     public static TrackedWalletDetails FromEntity(TrackedWallet trackedWallet)
         => new(
@@ -23,5 +26,7 @@ public sealed record TrackedWalletDetails(
             trackedWallet.TrackOutgoingTransfers,
             trackedWallet.TrackTokenTransfers,
             trackedWallet.CreatedAtUtc,
-            trackedWallet.UpdatedAtUtc);
+            trackedWallet.UpdatedAtUtc,
+            trackedWallet.Alias,
+            trackedWallet.EnabledChains.ToArray());
 }

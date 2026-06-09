@@ -133,6 +133,7 @@ public sealed class BlockchainIndexerWorker : BackgroundService
             if (block is not null)
             {
                 await _channels.RawBlockDataChannel.Writer.WriteAsync(block, cancellationToken);
+                _logger.LogInformation("Published block {BlockNumber} to the processing pipeline at {Timestamp}.", currentBlockNumber, DateTime.UtcNow);
             }
             else
             {

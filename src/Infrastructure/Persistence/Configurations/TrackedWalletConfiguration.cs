@@ -22,9 +22,16 @@ public sealed class TrackedWalletConfiguration : IEntityTypeConfiguration<Tracke
 
         builder.Property(wallet => wallet.UserId).IsRequired();
         builder.Property(wallet => wallet.MinimumTransactionValue).HasPrecision(38, 18);
+        builder.Property(wallet => wallet.Alias)
+            .HasMaxLength(100);
         builder.Property(wallet => wallet.TrackIncomingTransfers).IsRequired();
         builder.Property(wallet => wallet.TrackOutgoingTransfers).IsRequired();
         builder.Property(wallet => wallet.TrackTokenTransfers).IsRequired();
+        builder.Ignore(wallet => wallet.EnabledChains);
+        builder.Property<string>("_enabledChainsJson")
+            .HasColumnName("EnabledChains")
+            .HasDefaultValue("[]")
+            .IsRequired();
         builder.Property(wallet => wallet.CreatedAtUtc).IsRequired();
         builder.Property(wallet => wallet.UpdatedAtUtc);
 

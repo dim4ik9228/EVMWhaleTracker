@@ -39,6 +39,10 @@ public static class Errors
             "TrackedWallet.MinimumTransactionValue",
             "Minimum transaction value cannot be negative.");
 
+        public static readonly Error AliasTooLong = Error.Validation(
+            "TrackedWallet.Alias",
+            "Tracked wallet aliases must be 100 characters or fewer.");
+
         public static readonly Error AlreadyTracked = Error.Validation(
             "TrackedWallet.AlreadyTracked",
             "This Telegram user already tracks the specified address.");

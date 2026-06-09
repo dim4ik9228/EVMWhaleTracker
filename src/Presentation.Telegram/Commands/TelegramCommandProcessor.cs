@@ -77,11 +77,13 @@ public sealed class TelegramCommandProcessor(ISender sender) : ITelegramCommandP
             $"""
             Tracked wallet added successfully.
 
+            Alias: <code>{HtmlEncode(wallet.Alias ?? "none")}</code>
             Address: <code>{HtmlEncode(wallet.Address)}</code>
             Minimum transaction value: <code>{wallet.MinimumTransactionValue.ToString(CultureInfo.InvariantCulture)}</code>
             Incoming transfers: <code>{FormatOnOff(wallet.TrackIncomingTransfers)}</code>
             Outgoing transfers: <code>{FormatOnOff(wallet.TrackOutgoingTransfers)}</code>
             Token transfers: <code>{FormatOnOff(wallet.TrackTokenTransfers)}</code>
+            Enabled chains: <code>{HtmlEncode(FormatChains(wallet.EnabledChains))}</code>
             """;
 
         return new TelegramCommandResponse(responseText);
@@ -111,8 +113,10 @@ public sealed class TelegramCommandProcessor(ISender sender) : ITelegramCommandP
             lines.Add(
                 $"""
                 {index + 1}. <code>{HtmlEncode(wallet.Address)}</code>
+                   Alias: <code>{HtmlEncode(wallet.Alias ?? "none")}</code>
                    Minimum transaction value: <code>{wallet.MinimumTransactionValue.ToString(CultureInfo.InvariantCulture)}</code>
                    Incoming: <code>{FormatOnOff(wallet.TrackIncomingTransfers)}</code>, Outgoing: <code>{FormatOnOff(wallet.TrackOutgoingTransfers)}</code>, Token: <code>{FormatOnOff(wallet.TrackTokenTransfers)}</code>
+                   Enabled chains: <code>{HtmlEncode(FormatChains(wallet.EnabledChains))}</code>
                 """.TrimEnd());
         }
 
@@ -240,6 +244,11 @@ public sealed class TelegramCommandProcessor(ISender sender) : ITelegramCommandP
             || decimal.TryParse(value, NumberStyles.Number, CultureInfo.CurrentCulture, out result);
 
     private static string FormatOnOff(bool value) => value ? "on" : "off";
+
+    private static string FormatChains(IReadOnlyCollection<SupportedChain>? chains)
+        => chains is null || chains.Count == 0
+            ? "all"
+            : string.Join(", ", chains.Select(chain => chain.ToString()));
 
     private static string FormatError(Error error)
         => HtmlEncode(error.Description);

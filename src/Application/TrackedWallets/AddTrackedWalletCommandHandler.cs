@@ -37,7 +37,9 @@ public sealed class AddTrackedWalletCommandHandler(
             request.MinimumTransactionValue,
             request.TrackIncomingTransfers,
             request.TrackOutgoingTransfers,
-            request.TrackTokenTransfers);
+            request.TrackTokenTransfers,
+            request.Alias,
+            request.EnabledChains);
 
         if (createResult.IsFailure)
         {

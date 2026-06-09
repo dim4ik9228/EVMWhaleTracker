@@ -25,13 +25,17 @@ public sealed class TrackedWalletHandlersTests
                 MinimumTransactionValue: 2m,
                 TrackIncomingTransfers: true,
                 TrackOutgoingTransfers: false,
-                TrackTokenTransfers: true),
+                TrackTokenTransfers: true,
+                Alias: "MEXC Hot Wallet",
+                EnabledChains: [SupportedChain.Bsc, SupportedChain.Base]),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(Normalize(LowercaseAddress), result.Value.Address);
         Assert.Equal(7777, result.Value.UserId);
         Assert.Equal(2m, result.Value.MinimumTransactionValue);
+        Assert.Equal("MEXC Hot Wallet", result.Value.Alias);
+        Assert.Equal([SupportedChain.Bsc, SupportedChain.Base], result.Value.EnabledChains);
         Assert.Single(repository.Wallets);
 
         var normalizedAddress = NormalizeAddress(LowercaseAddress);
@@ -112,16 +116,21 @@ public sealed class TrackedWalletHandlersTests
                 MinimumTransactionValue: 5m,
                 TrackIncomingTransfers: false,
                 TrackOutgoingTransfers: true,
-                TrackTokenTransfers: false),
+                TrackTokenTransfers: false,
+                Alias: "Treasury",
+                EnabledChains: [SupportedChain.Ethereum, SupportedChain.Base]),
             CancellationToken.None);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(5m, result.Value.MinimumTransactionValue);
+        Assert.Equal("Treasury", result.Value.Alias);
         Assert.False(result.Value.TrackIncomingTransfers);
         Assert.True(result.Value.TrackOutgoingTransfers);
         Assert.False(result.Value.TrackTokenTransfers);
+        Assert.Equal([SupportedChain.Ethereum, SupportedChain.Base], result.Value.EnabledChains);
         Assert.NotNull(trackedWallet.UpdatedAtUtc);
         Assert.Equal(5m, trackedWallet.MinimumTransactionValue);
+        Assert.Equal("Treasury", trackedWallet.Alias);
     }
 
     private static string Normalize(string address)
