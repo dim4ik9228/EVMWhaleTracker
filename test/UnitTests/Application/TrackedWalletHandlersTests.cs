@@ -103,11 +103,13 @@ public sealed class TrackedWalletHandlersTests
     [Fact]
     public async Task UpdateTrackedWalletSettingsCommandHandler_UpdatesWalletConfiguration()
     {
+        using var cache = new InMemoryCacheService();
         var repository = new FakeTrackedWalletRepository();
         var trackedWallet = CreateTrackedWallet(7777);
         repository.Seed(trackedWallet);
+        cache.Add(trackedWallet);
 
-        var handler = new UpdateTrackedWalletSettingsCommandHandler(repository);
+        var handler = new UpdateTrackedWalletSettingsCommandHandler(repository, cache);
 
         var result = await handler.Handle(
             new UpdateTrackedWalletSettingsCommand(
@@ -131,6 +133,10 @@ public sealed class TrackedWalletHandlersTests
         Assert.NotNull(trackedWallet.UpdatedAtUtc);
         Assert.Equal(5m, trackedWallet.MinimumTransactionValue);
         Assert.Equal("Treasury", trackedWallet.Alias);
+        Assert.True(cache.TryGetEntries(trackedWallet.Address, out var entries));
+        var entry = Assert.Single(entries);
+        Assert.Equal(5m, entry.MinimumTransactionValue);
+        Assert.Equal("Treasury", entry.Alias);
     }
 
     private static string Normalize(string address)

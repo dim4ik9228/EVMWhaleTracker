@@ -29,7 +29,6 @@ services:
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=EvmWhaleTracker;Username=postgres;Password=postgres
       TelegramBot__BotToken: ${TELEGRAM_BOT_TOKEN:-}
       BlockchainIndexer__EnableRpcDiagnostics: ${BLOCKCHAIN_ENABLE_RPC_DIAGNOSTICS:-false}
-      BlockchainIndexer__EnableTokenTransferReceiptFetching: ${BLOCKCHAIN_ENABLE_TOKEN_TRANSFER_RECEIPT_FETCHING:-false}
       BlockchainIndexer__HttpRpcUrl: ${BLOCKCHAIN_HTTP_RPC_URL:-}
       BlockchainIndexer__WebSocketRpcUrl: ${BLOCKCHAIN_WEB_SOCKET_RPC_URL:-}
       BlockchainIndexer__PreferWebSocket: "true"

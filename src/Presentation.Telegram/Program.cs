@@ -1,7 +1,9 @@
 using Application.Messaging;
+using Application.Abstractions;
 using Infrastructure.Caching;
 using Infrastructure.Blockchain;
 using Infrastructure.Persistence;
+using Infrastructure.Pricing;
 using Infrastructure.Workers;
 using Application.Behaviors;
 using Application;
@@ -33,6 +35,9 @@ builder.Services.AddSerilog((services, loggerConfiguration) =>
 builder.Services.Configure<BlockchainIndexerOptions>(
     builder.Configuration.GetSection("BlockchainIndexer"));
 
+builder.Services.Configure<AssetPriceOptions>(
+    builder.Configuration.GetSection("AssetPrices"));
+
 builder.Services.Configure<TelegramBotOptions>(
     builder.Configuration.GetSection("TelegramBot"));
 
@@ -43,19 +48,25 @@ if (string.IsNullOrWhiteSpace(connectionString))
 }
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
-builder.Services.AddScoped<Application.Abstractions.ITrackedWalletRepository, TrackedWalletRepository>();
+builder.Services.AddScoped<ITrackedWalletRepository, TrackedWalletRepository>();
 builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssemblyContaining<AssemblyReference>();
     cfg.AddOpenBehavior(typeof(RequestLoggingPipelineBehavior<,>));
 });
 
+builder.Services.AddMemoryCache();
+builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<OnChainPipelineChannels>();
 builder.Services.AddSingleton<InMemoryCacheService>();
 builder.Services.AddSingleton<TelegramGlobalRateLimiter>();
-builder.Services.AddSingleton<Application.Abstractions.ITrackedAddressCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
-builder.Services.AddSingleton<Application.Abstractions.ITrackedWalletCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
+builder.Services.AddSingleton<IChainMetadataProvider, StaticChainMetadataProvider>();
+builder.Services.AddSingleton<Erc20TransferLogParser>();
+builder.Services.AddSingleton<ITrackedAddressCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
+builder.Services.AddSingleton<ITrackedWalletCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
+builder.Services.AddSingleton<IPendingWalletAliasRequestStore, InMemoryPendingWalletAliasRequestStore>();
 builder.Services.AddScoped<ITelegramCommandProcessor, TelegramCommandProcessor>();
+builder.Services.AddSingleton<ITelegramNotificationRenderer, TelegramNotificationRenderer>();
 builder.Services.AddHostedService<TrackedWalletCacheHydrationService>();
 
 var blockchainIndexerSection = builder.Configuration.GetSection("BlockchainIndexer");
@@ -63,6 +74,8 @@ var httpRpcUrl = blockchainIndexerSection["HttpRpcUrl"];
 if (!string.IsNullOrWhiteSpace(httpRpcUrl))
 {
     builder.Services.AddSingleton<IBlockchainBlockSource, NethereumBlockchainBlockSource>();
+    builder.Services.AddSingleton<ITokenMetadataProvider, NethereumTokenMetadataProvider>();
+    builder.Services.AddHttpClient<IAssetPriceProvider, HttpAssetPriceProvider>();
     builder.Services.AddHostedService<BlockchainIndexerWorker>();
     builder.Services.AddHostedService<WalletTrackerWorker>();
 }
@@ -85,12 +98,13 @@ else
     Console.WriteLine("TelegramBot:BotToken is not configured. Telegram workers are disabled.");
 }
 
-var host = builder.Build();
+var app = builder.Build();
 
-using (var scope = host.Services.CreateScope())
+
+using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await dbContext.Database.MigrateAsync();
 }
 
-await host.RunAsync();
+await app.RunAsync();

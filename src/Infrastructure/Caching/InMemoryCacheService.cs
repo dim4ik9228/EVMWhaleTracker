@@ -8,7 +8,7 @@ namespace Infrastructure.Caching;
 public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposable
 {
     private readonly HashSet<Address> _trackedAddresses = [];
-    private readonly Dictionary<Address, HashSet<long>> _trackedWalletOwners = new();
+    private readonly Dictionary<Address, Dictionary<Guid, TrackedWalletCacheEntry>> _trackedWalletEntries = new();
     private readonly ReaderWriterLockSlim _lock = new(LockRecursionPolicy.NoRecursion);
 
     public void ReplaceAll(IEnumerable<Address> addresses)
@@ -19,7 +19,7 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         try
         {
             _trackedAddresses.Clear();
-            _trackedWalletOwners.Clear();
+            _trackedWalletEntries.Clear();
             foreach (var address in addresses)
             {
                 _trackedAddresses.Add(address);
@@ -39,19 +39,11 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         try
         {
             _trackedAddresses.Clear();
-            _trackedWalletOwners.Clear();
+            _trackedWalletEntries.Clear();
 
             foreach (var trackedWallet in trackedWallets)
             {
-                _trackedAddresses.Add(trackedWallet.Address);
-
-                if (!_trackedWalletOwners.TryGetValue(trackedWallet.Address, out var owners))
-                {
-                    owners = [];
-                    _trackedWalletOwners[trackedWallet.Address] = owners;
-                }
-
-                owners.Add(trackedWallet.UserId);
+                AddCore(trackedWallet);
             }
         }
         finally
@@ -82,14 +74,7 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         _lock.EnterWriteLock();
         try
         {
-            _trackedAddresses.Add(trackedWallet.Address);
-            if (!_trackedWalletOwners.TryGetValue(trackedWallet.Address, out var owners))
-            {
-                owners = [];
-                _trackedWalletOwners[trackedWallet.Address] = owners;
-            }
-
-            return owners.Add(trackedWallet.UserId);
+            return AddCore(trackedWallet);
         }
         finally
         {
@@ -104,6 +89,7 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         _lock.EnterWriteLock();
         try
         {
+            _trackedWalletEntries.Remove(address);
             return _trackedAddresses.Remove(address);
         }
         finally
@@ -120,12 +106,12 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         try
         {
             var removed = false;
-            if (_trackedWalletOwners.TryGetValue(trackedWallet.Address, out var owners))
+            if (_trackedWalletEntries.TryGetValue(trackedWallet.Address, out var entries))
             {
-                removed = owners.Remove(trackedWallet.UserId);
-                if (owners.Count == 0)
+                removed = entries.Remove(trackedWallet.Id);
+                if (entries.Count == 0)
                 {
-                    _trackedWalletOwners.Remove(trackedWallet.Address);
+                    _trackedWalletEntries.Remove(trackedWallet.Address);
                     _trackedAddresses.Remove(trackedWallet.Address);
                 }
             }
@@ -160,13 +146,38 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         _lock.EnterReadLock();
         try
         {
-            if (_trackedWalletOwners.TryGetValue(address, out var userIds))
+            if (_trackedWalletEntries.TryGetValue(address, out var entries))
             {
-                telegramUserIds = userIds.ToArray();
+                telegramUserIds = entries.Values
+                    .Select(entry => entry.TelegramUserId)
+                    .Distinct()
+                    .ToArray();
                 return true;
             }
 
             telegramUserIds = Array.Empty<long>();
+            return false;
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
+    }
+
+    public bool TryGetEntries(Address address, out IReadOnlyCollection<TrackedWalletCacheEntry> entries)
+    {
+        ArgumentNullException.ThrowIfNull(address);
+
+        _lock.EnterReadLock();
+        try
+        {
+            if (_trackedWalletEntries.TryGetValue(address, out var cachedEntries))
+            {
+                entries = cachedEntries.Values.ToArray();
+                return true;
+            }
+
+            entries = Array.Empty<TrackedWalletCacheEntry>();
             return false;
         }
         finally
@@ -191,5 +202,19 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
     public void Dispose()
     {
         _lock.Dispose();
+    }
+
+    private bool AddCore(TrackedWallet trackedWallet)
+    {
+        _trackedAddresses.Add(trackedWallet.Address);
+        if (!_trackedWalletEntries.TryGetValue(trackedWallet.Address, out var entries))
+        {
+            entries = [];
+            _trackedWalletEntries[trackedWallet.Address] = entries;
+        }
+
+        var wasNew = !entries.ContainsKey(trackedWallet.Id);
+        entries[trackedWallet.Id] = TrackedWalletCacheEntry.FromEntity(trackedWallet);
+        return wasNew;
     }
 }

@@ -5,7 +5,9 @@ using MediatR;
 
 namespace Application.TrackedWallets;
 
-public sealed class UpdateTrackedWalletSettingsCommandHandler(ITrackedWalletRepository trackedWalletRepository)
+public sealed class UpdateTrackedWalletSettingsCommandHandler(
+    ITrackedWalletRepository trackedWalletRepository,
+    ITrackedWalletCacheService trackedWalletCache)
     : IRequestHandler<UpdateTrackedWalletSettingsCommand, Result<TrackedWalletDetails>>
 {
     public async Task<Result<TrackedWalletDetails>> Handle(
@@ -42,6 +44,7 @@ public sealed class UpdateTrackedWalletSettingsCommandHandler(ITrackedWalletRepo
         }
 
         await trackedWalletRepository.SaveChangesAsync(cancellationToken);
+        trackedWalletCache.Add(trackedWallet);
         return Result<TrackedWalletDetails>.Success(TrackedWalletDetails.FromEntity(trackedWallet));
     }
 }

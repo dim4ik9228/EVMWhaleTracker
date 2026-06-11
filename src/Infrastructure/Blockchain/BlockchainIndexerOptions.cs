@@ -1,10 +1,12 @@
+using Domain.Common;
+
 namespace Infrastructure.Blockchain;
 
 public sealed class BlockchainIndexerOptions
 {
-    public bool EnableRpcDiagnostics { get; init; }
+    public SupportedChain Chain { get; init; } = SupportedChain.Ethereum;
 
-    public bool EnableTokenTransferReceiptFetching { get; init; }
+    public bool EnableRpcDiagnostics { get; init; }
 
     public string? HttpRpcUrl { get; init; }
 

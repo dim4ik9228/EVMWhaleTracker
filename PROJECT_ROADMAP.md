@@ -446,19 +446,19 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [x] Startup cache synchronization
 - [x] Runtime cache updates from add/remove commands
 - [x] Wallet aliases
-- [ ] Minimum transaction value filtering
-- [ ] ERC-20 transfer event matching
-- [ ] Token metadata resolution
-- [ ] USD valuation on notifications
-- [ ] Telegram Markdown escaping
+- [x] Minimum transaction value filtering
+- [x] ERC-20 transfer event matching
+- [x] Token metadata resolution
+- [x] USD valuation on notifications
+- [x] Telegram Markdown escaping
 - [x] Dockerfile
 - [x] Docker Compose setup
 - [ ] Deployment configuration
 - [x] End-to-end MVP flow validated on a live chain
 - [ ] Support multiple chains simultaneously
-- [ ] Redesign Telegram notifications to match a drops-style bot message layout
+- [x] Redesign Telegram notifications to match a drops-style bot message layout
 - [ ] Auto-detected wallet labels from chain scans
-- [ ] Transaction explorer links in notifications
+- [x] Transaction explorer links in notifications
 - [ ] Inline notification edit menu for alias, minimum value, and chain preferences
 
 ## Phase 12: Inline Notification Editing

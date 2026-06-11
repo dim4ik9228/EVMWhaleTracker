@@ -1,6 +1,8 @@
 using Application.Abstractions;
 using Application.Messaging;
+using Domain.Common;
 using Domain.ValueObjects;
+using Infrastructure.Blockchain;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -10,19 +12,35 @@ public sealed class WalletTrackerWorker : BackgroundService
 {
     private readonly OnChainPipelineChannels _channels;
     private readonly ITrackedWalletCacheService _trackedWalletCache;
+    private readonly IChainMetadataProvider _chainMetadataProvider;
+    private readonly ITokenMetadataProvider _tokenMetadataProvider;
+    private readonly IAssetPriceProvider _assetPriceProvider;
+    private readonly Erc20TransferLogParser _erc20TransferLogParser;
     private readonly ILogger<WalletTrackerWorker> _logger;
 
     public WalletTrackerWorker(
         OnChainPipelineChannels channels,
         ITrackedWalletCacheService trackedWalletCache,
+        IChainMetadataProvider chainMetadataProvider,
+        ITokenMetadataProvider tokenMetadataProvider,
+        IAssetPriceProvider assetPriceProvider,
+        Erc20TransferLogParser erc20TransferLogParser,
         ILogger<WalletTrackerWorker> logger)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(trackedWalletCache);
+        ArgumentNullException.ThrowIfNull(chainMetadataProvider);
+        ArgumentNullException.ThrowIfNull(tokenMetadataProvider);
+        ArgumentNullException.ThrowIfNull(assetPriceProvider);
+        ArgumentNullException.ThrowIfNull(erc20TransferLogParser);
         ArgumentNullException.ThrowIfNull(logger);
 
         _channels = channels;
         _trackedWalletCache = trackedWalletCache;
+        _chainMetadataProvider = chainMetadataProvider;
+        _tokenMetadataProvider = tokenMetadataProvider;
+        _assetPriceProvider = assetPriceProvider;
+        _erc20TransferLogParser = erc20TransferLogParser;
         _logger = logger;
     }
 
@@ -32,13 +50,7 @@ public sealed class WalletTrackerWorker : BackgroundService
         {
             foreach (var transaction in block.Transactions)
             {
-                await ProcessAddressMatchAsync(
-                    transaction.TransactionHash,
-                    transaction.FromAddress,
-                    transaction.ToAddress,
-                    transaction.Value,
-                    block,
-                    stoppingToken);
+                await ProcessNativeTransferAsync(transaction, block, stoppingToken);
             }
 
             foreach (var log in block.Logs)
@@ -48,51 +60,94 @@ public sealed class WalletTrackerWorker : BackgroundService
         }
     }
 
-    private async Task ProcessAddressMatchAsync(
-        string transactionHash,
-        string? fromAddress,
-        string? toAddress,
-        decimal value,
+    private async Task ProcessNativeTransferAsync(
+        RawTransactionData transaction,
         RawBlockData block,
         CancellationToken cancellationToken)
     {
-        await ProcessSingleAddressAsync(transactionHash, fromAddress, "outgoing transfer", value, block, cancellationToken);
-        await ProcessSingleAddressAsync(transactionHash, toAddress, "incoming transfer", value, block, cancellationToken);
+        var fromAddress = NormalizeAddressOrNull(transaction.FromAddress);
+        var toAddress = NormalizeAddressOrNull(transaction.ToAddress);
+
+        if (fromAddress is null && toAddress is null)
+        {
+            return;
+        }
+
+        var isSelfTransfer = fromAddress is not null && fromAddress.Equals(toAddress);
+
+        if (fromAddress is not null)
+        {
+            await ProcessNativeAddressMatchAsync(
+                trackedAddress: fromAddress,
+                counterpartyAddress: toAddress,
+                operation: isSelfTransfer ? NotificationOperation.SelfTransfer : NotificationOperation.Sent,
+                transaction,
+                block,
+                cancellationToken);
+        }
+
+        if (toAddress is not null && !isSelfTransfer)
+        {
+            await ProcessNativeAddressMatchAsync(
+                trackedAddress: toAddress,
+                counterpartyAddress: fromAddress,
+                operation: NotificationOperation.Received,
+                transaction,
+                block,
+                cancellationToken);
+        }
     }
 
-    private async Task ProcessSingleAddressAsync(
-        string transactionHash,
-        string? rawAddress,
-        string directionLabel,
-        decimal value,
+    private async Task ProcessNativeAddressMatchAsync(
+        Address trackedAddress,
+        Address? counterpartyAddress,
+        NotificationOperation operation,
+        RawTransactionData transaction,
         RawBlockData block,
         CancellationToken cancellationToken)
     {
-        var normalizedAddressResult = Address.Normalize(rawAddress);
-        if (!normalizedAddressResult.IsSuccess)
+        if (!_trackedWalletCache.TryGetEntries(trackedAddress, out var entries))
         {
             return;
         }
 
-        var normalizedAddress = normalizedAddressResult.Value;
-        if (!_trackedWalletCache.Contains(normalizedAddress))
+        var chainMetadata = _chainMetadataProvider.Get(block.Chain);
+        foreach (var entry in entries)
         {
-            return;
-        }
+            if (!ShouldNotify(entry, block.Chain, operation, isTokenTransfer: false))
+            {
+                continue;
+            }
 
-        if (!_trackedWalletCache.TryGetTelegramUserIds(normalizedAddress, out var telegramUserIds))
-        {
-            _logger.LogDebug("Tracked address {Address} has no associated Telegram user ids.", normalizedAddress);
-            return;
-        }
+            var usdValue = await ResolveUsdValueAsync(
+                block.Chain,
+                tokenContractAddress: null,
+                chainMetadata.NativeSymbol,
+                transaction.Value,
+                entry.MinimumTransactionValue,
+                cancellationToken);
 
-        foreach (var telegramUserId in telegramUserIds)
-        {
+            if (!usdValue.ShouldSend)
+            {
+                continue;
+            }
+
             var payload = new NotificationPayload(
-                TelegramUserId: telegramUserId,
-                MarkdownMessage: BuildMessage(normalizedAddress, directionLabel, value, transactionHash, block),
-                WalletAddress: normalizedAddress.Value,
-                TransactionHash: transactionHash);
+                TelegramUserId: entry.TelegramUserId,
+                Chain: block.Chain,
+                Operation: operation,
+                TrackedWalletAddress: trackedAddress.Value,
+                TrackedWalletAlias: entry.Alias,
+                CounterpartyAddress: counterpartyAddress?.Value,
+                CounterpartyAlias: ResolveCounterpartyAlias(counterpartyAddress),
+                TransactionHash: transaction.TransactionHash,
+                AssetSymbol: chainMetadata.NativeSymbol,
+                AssetName: chainMetadata.NativeSymbol,
+                TokenContractAddress: null,
+                Amount: transaction.Value,
+                UsdValue: usdValue.Value,
+                BlockNumber: block.BlockNumber,
+                BlockTimestampUtc: block.BlockTimestampUtc);
 
             await _channels.NotificationPayloadChannel.Writer.WriteAsync(payload, cancellationToken);
         }
@@ -100,57 +155,187 @@ public sealed class WalletTrackerWorker : BackgroundService
 
     private async Task ProcessLogMatchAsync(RawLogData log, RawBlockData block, CancellationToken cancellationToken)
     {
-        var normalizedAddressResult = Address.Normalize(log.ContractAddress);
-        if (!normalizedAddressResult.IsSuccess)
+        if (!_erc20TransferLogParser.TryParse(log, block.Chain, out var transferLog))
         {
             return;
         }
 
-        var normalizedAddress = normalizedAddressResult.Value;
-        if (!_trackedWalletCache.Contains(normalizedAddress))
+        var tokenMetadataResult = await _tokenMetadataProvider.GetAsync(
+            block.Chain,
+            transferLog.TokenContractAddress,
+            cancellationToken);
+
+        if (tokenMetadataResult.IsFailure)
+        {
+            _logger.LogDebug(
+                "Skipping ERC-20 transfer {TransactionHash} because token metadata for {TokenContractAddress} could not be resolved: {Error}.",
+                transferLog.TransactionHash,
+                transferLog.TokenContractAddress,
+                tokenMetadataResult.Error.Description);
+            return;
+        }
+
+        var amount = ConvertRawTokenAmount(transferLog.RawAmount, tokenMetadataResult.Value.Decimals);
+
+        await ProcessTokenAddressMatchAsync(
+            transferLog.ToAddress,
+            transferLog.FromAddress,
+            NotificationOperation.Received,
+            transferLog,
+            tokenMetadataResult.Value,
+            amount,
+            block,
+            cancellationToken);
+
+        if (!transferLog.FromAddress.Equals(transferLog.ToAddress))
+        {
+            await ProcessTokenAddressMatchAsync(
+                transferLog.FromAddress,
+                transferLog.ToAddress,
+                NotificationOperation.Sent,
+                transferLog,
+                tokenMetadataResult.Value,
+                amount,
+                block,
+                cancellationToken);
+        }
+    }
+
+    private async Task ProcessTokenAddressMatchAsync(
+        Address trackedAddress,
+        Address counterpartyAddress,
+        NotificationOperation operation,
+        Erc20TransferLog transferLog,
+        TokenMetadata tokenMetadata,
+        decimal amount,
+        RawBlockData block,
+        CancellationToken cancellationToken)
+    {
+        if (!_trackedWalletCache.TryGetEntries(trackedAddress, out var entries))
         {
             return;
         }
 
-        if (!_trackedWalletCache.TryGetTelegramUserIds(normalizedAddress, out var telegramUserIds))
+        foreach (var entry in entries)
         {
-            return;
-        }
+            if (!ShouldNotify(entry, block.Chain, operation, isTokenTransfer: true))
+            {
+                continue;
+            }
 
-        foreach (var telegramUserId in telegramUserIds)
-        {
+            var usdValue = await ResolveUsdValueAsync(
+                block.Chain,
+                transferLog.TokenContractAddress,
+                tokenMetadata.Symbol,
+                amount,
+                entry.MinimumTransactionValue,
+                cancellationToken);
+
+            if (!usdValue.ShouldSend)
+            {
+                continue;
+            }
+
             var payload = new NotificationPayload(
-                TelegramUserId: telegramUserId,
-                MarkdownMessage: BuildLogMessage(normalizedAddress, log, block),
-                WalletAddress: normalizedAddress.Value,
-                TransactionHash: log.TransactionHash);
+                TelegramUserId: entry.TelegramUserId,
+                Chain: block.Chain,
+                Operation: operation,
+                TrackedWalletAddress: trackedAddress.Value,
+                TrackedWalletAlias: entry.Alias,
+                CounterpartyAddress: counterpartyAddress.Value,
+                CounterpartyAlias: ResolveCounterpartyAlias(counterpartyAddress),
+                TransactionHash: transferLog.TransactionHash,
+                AssetSymbol: tokenMetadata.Symbol,
+                AssetName: tokenMetadata.Name,
+                TokenContractAddress: transferLog.TokenContractAddress,
+                Amount: amount,
+                UsdValue: usdValue.Value,
+                BlockNumber: block.BlockNumber,
+                BlockTimestampUtc: block.BlockTimestampUtc);
 
             await _channels.NotificationPayloadChannel.Writer.WriteAsync(payload, cancellationToken);
         }
     }
 
-    private static string BuildMessage(Address address, string directionLabel, decimal value, string transactionHash, RawBlockData block)
+    private async Task<UsdResolution> ResolveUsdValueAsync(
+        SupportedChain chain,
+        string? tokenContractAddress,
+        string assetSymbol,
+        decimal amount,
+        decimal minimumTransactionValue,
+        CancellationToken cancellationToken)
     {
-        return
-            $"*Wallet activity detected*\n" +
-            $"Address: `{address.Value}`\n" +
-            $"Direction: `{directionLabel}`\n" +
-            $"Value: `{value.ToString(System.Globalization.CultureInfo.InvariantCulture)}`\n" +
-            $"Tx: `{transactionHash}`\n" +
-            $"Block: `{block.BlockNumber}`";
+        var priceResult = await _assetPriceProvider.GetUsdPriceAsync(
+            chain,
+            tokenContractAddress,
+            assetSymbol,
+            cancellationToken);
+
+        if (priceResult.IsFailure)
+        {
+            _logger.LogWarning(
+                "Could not resolve USD price for {AssetSymbol} on {Chain}. Sending notification without USD value and without applying minimum value threshold. Error: {Error}.",
+                assetSymbol,
+                chain,
+                priceResult.Error.Description);
+            return new UsdResolution(true, null);
+        }
+
+        var value = amount * priceResult.Value.PriceUsd;
+        return value >= minimumTransactionValue
+            ? new UsdResolution(true, value)
+            : new UsdResolution(false, value);
     }
 
-    private static string BuildLogMessage(Address address, RawLogData log, RawBlockData block)
+    private string? ResolveCounterpartyAlias(Address? counterpartyAddress)
     {
-        var topics = log.Topics.Count == 0
-            ? "none"
-            : string.Join(", ", log.Topics.Select(topic => $"`{topic}`"));
+        if (counterpartyAddress is null)
+        {
+            return null;
+        }
 
-        return
-            $"*Wallet activity detected*\n" +
-            $"Address: `{address.Value}`\n" +
-            $"Log tx: `{log.TransactionHash}`\n" +
-            $"Topics: {topics}\n" +
-            $"Block: `{block.BlockNumber}`";
+        return _trackedWalletCache.TryGetEntries(counterpartyAddress, out var entries)
+            ? entries.FirstOrDefault(entry => !string.IsNullOrWhiteSpace(entry.Alias))?.Alias
+            : null;
     }
+
+    private static bool ShouldNotify(
+        TrackedWalletCacheEntry entry,
+        SupportedChain chain,
+        NotificationOperation operation,
+        bool isTokenTransfer)
+    {
+        if (entry.EnabledChains.Count > 0 && !entry.EnabledChains.Contains(chain))
+        {
+            return false;
+        }
+
+        if (isTokenTransfer && !entry.TrackTokenTransfers)
+        {
+            return false;
+        }
+
+        return operation switch
+        {
+            NotificationOperation.Received => entry.TrackIncomingTransfers,
+            NotificationOperation.Sent => entry.TrackOutgoingTransfers,
+            NotificationOperation.SelfTransfer => entry.TrackIncomingTransfers || entry.TrackOutgoingTransfers,
+            _ => false
+        };
+    }
+
+    private static Address? NormalizeAddressOrNull(string? rawAddress)
+    {
+        var normalizedAddressResult = Address.Normalize(rawAddress);
+        return normalizedAddressResult.IsSuccess ? normalizedAddressResult.Value : null;
+    }
+
+    private static decimal ConvertRawTokenAmount(System.Numerics.BigInteger rawAmount, int decimals)
+    {
+        var divisor = System.Numerics.BigInteger.Pow(10, decimals);
+        var whole = System.Numerics.BigInteger.DivRem(rawAmount, divisor, out var remainder);
+        return (decimal)whole + ((decimal)remainder / (decimal)divisor);
+    }
+
+    private sealed record UsdResolution(bool ShouldSend, decimal? Value);
 }

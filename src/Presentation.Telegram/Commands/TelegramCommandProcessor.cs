@@ -2,24 +2,30 @@ using System.Globalization;
 using System.Net;
 using Application.TrackedWallets;
 using Domain.Common;
+using Domain.ValueObjects;
 using MediatR;
 
 namespace Presentation.Telegram.Commands;
 
-public sealed class TelegramCommandProcessor(ISender sender) : ITelegramCommandProcessor
+public sealed class TelegramCommandProcessor(
+    ISender sender,
+    IPendingWalletAliasRequestStore pendingAliasRequests)
+    : ITelegramCommandProcessor
 {
+    private const string AliasPrompt = "Please give a name to this wallet";
+
     private static readonly string HelpText =
         """
         Welcome to EVMWhaleTracker.
 
         Available commands:
-        <code>/add &lt;address&gt; [minimumValue]</code>
+        <code>/add &lt;address&gt; &lt;name&gt;</code>
         <code>/list</code>
         <code>/remove &lt;address&gt;</code>
 
         Examples:
-        <code>/add 0x52908400098527886E0F7030069857D2E4169EE7</code>
-        <code>/add 0x52908400098527886e0f7030069857d2e4169ee7 1.5</code>
+        <code>/add 0x52908400098527886E0F7030069857D2E4169EE7 Main Address</code>
+        <code>/add 0x52908400098527886e0f7030069857d2e4169ee7 Binance Deposit</code>
         <code>/remove 0x52908400098527886E0F7030069857D2E4169EE7</code>
         """;
 
@@ -30,6 +36,17 @@ public sealed class TelegramCommandProcessor(ISender sender) : ITelegramCommandP
         if (string.IsNullOrWhiteSpace(request.MessageText))
         {
             return null;
+        }
+
+        if (request.IsPrivateChat &&
+            !request.MessageText.TrimStart().StartsWith('/') &&
+            pendingAliasRequests.TryGet(request.TelegramUserId, out var pendingAliasRequest))
+        {
+            return await HandlePendingAliasAsync(
+                request.TelegramUserId,
+                pendingAliasRequest,
+                request.MessageText,
+                cancellationToken);
         }
 
         if (!TryParseCommand(request.MessageText, out var command, out var arguments))
@@ -55,16 +72,53 @@ public sealed class TelegramCommandProcessor(ISender sender) : ITelegramCommandP
 
     private async Task<TelegramCommandResponse> HandleAddAsync(long telegramUserId, string arguments, CancellationToken cancellationToken)
     {
-        if (!TryParseAddArguments(arguments, out var rawAddress, out var minimumTransactionValue, out var errorText))
+        if (!TryParseAddArguments(arguments, out var rawAddress, out var alias, out var errorText))
         {
             return new TelegramCommandResponse(errorText);
         }
 
+        if (string.IsNullOrWhiteSpace(alias))
+        {
+            var addressResult = Address.Normalize(rawAddress);
+            if (addressResult.IsFailure)
+            {
+                return new TelegramCommandResponse(FormatError(addressResult.Error));
+            }
+
+            pendingAliasRequests.Set(telegramUserId, new PendingWalletAliasRequest(rawAddress));
+            return new TelegramCommandResponse(AliasPrompt);
+        }
+
+        return await AddWalletAsync(telegramUserId, rawAddress, alias, cancellationToken);
+    }
+
+    private async Task<TelegramCommandResponse> HandlePendingAliasAsync(
+        long telegramUserId,
+        PendingWalletAliasRequest pendingAliasRequest,
+        string messageText,
+        CancellationToken cancellationToken)
+    {
+        var alias = messageText.Trim();
+        if (string.IsNullOrWhiteSpace(alias))
+        {
+            return new TelegramCommandResponse(AliasPrompt);
+        }
+
+        pendingAliasRequests.Clear(telegramUserId);
+        return await AddWalletAsync(telegramUserId, pendingAliasRequest.RawAddress, alias, cancellationToken);
+    }
+
+    private async Task<TelegramCommandResponse> AddWalletAsync(
+        long telegramUserId,
+        string rawAddress,
+        string alias,
+        CancellationToken cancellationToken)
+    {
         var result = await sender.Send(
             new AddTrackedWalletCommand(
                 TelegramUserId: telegramUserId,
                 RawAddress: rawAddress,
-                MinimumTransactionValue: minimumTransactionValue),
+                Alias: alias),
             cancellationToken);
 
         if (result.IsFailure)
@@ -188,31 +242,21 @@ public sealed class TelegramCommandProcessor(ISender sender) : ITelegramCommandP
         return command.ToLowerInvariant();
     }
 
-    private static bool TryParseAddArguments(string arguments, out string rawAddress, out decimal minimumTransactionValue, out string errorText)
+    private static bool TryParseAddArguments(string arguments, out string rawAddress, out string? alias, out string errorText)
     {
         rawAddress = string.Empty;
-        minimumTransactionValue = 0m;
+        alias = null;
         errorText = string.Empty;
 
         if (string.IsNullOrWhiteSpace(arguments))
         {
-            errorText = "Usage: /add &lt;address&gt; [minimumValue]";
+            errorText = "Usage: /add &lt;address&gt; &lt;name&gt;";
             return false;
         }
 
-        var parts = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length > 2)
-        {
-            errorText = "Usage: /add &lt;address&gt; [minimumValue]";
-            return false;
-        }
-
+        var parts = arguments.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         rawAddress = parts[0];
-        if (parts.Length == 2 && !TryParseDecimal(parts[1], out minimumTransactionValue))
-        {
-            errorText = "The minimum value must be a valid decimal number.";
-            return false;
-        }
+        alias = parts.Length == 2 ? parts[1].Trim() : null;
 
         return true;
     }

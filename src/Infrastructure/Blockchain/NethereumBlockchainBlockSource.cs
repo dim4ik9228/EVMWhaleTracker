@@ -19,7 +19,6 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
     private readonly Web3 _web3;
     private readonly string? webSocketRpcUrl;
     private readonly bool _enableRpcDiagnostics;
-    private readonly bool _enableTokenTransferReceiptFetching;
     private readonly ILogger<NethereumBlockchainBlockSource> _logger;
     private readonly IDisposable? _ownedTransport;
 
@@ -34,7 +33,7 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
         _logger = logger;
         webSocketRpcUrl = settings.WebSocketRpcUrl;
         _enableRpcDiagnostics = settings.EnableRpcDiagnostics;
-        _enableTokenTransferReceiptFetching = settings.EnableTokenTransferReceiptFetching;
+        Chain = settings.Chain;
 
         if (!string.IsNullOrWhiteSpace(settings.HttpRpcUrl))
         {
@@ -51,6 +50,8 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
             throw new InvalidOperationException("Either HttpRpcUrl or WebSocketRpcUrl must be configured for the blockchain indexer.");
         }
     }
+
+    private Domain.Common.SupportedChain Chain { get; }
 
     public void Dispose()
     {
@@ -81,7 +82,6 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
 
         var transactions = new List<RawTransactionData>(block.Transactions.Length);
         var logs = new List<RawLogData>();
-        var receiptRequests = 0;
 
         foreach (var transaction in block.Transactions)
         {
@@ -90,37 +90,6 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
                 FromAddress: transaction.From,
                 ToAddress: transaction.To,
                 Value: Web3.Convert.FromWei(transaction.Value?.Value ?? BigInteger.Zero)));
-
-            if (!_enableTokenTransferReceiptFetching)
-            {
-                continue;
-            }
-
-            receiptRequests++;
-
-            try
-            {
-                var receipt = await _web3.Eth.Transactions.GetTransactionReceipt
-                    .SendRequestAsync(transaction.TransactionHash);
-
-                if (receipt?.Logs is null)
-                {
-                    continue;
-                }
-
-                foreach (var log in receipt.Logs)
-                {
-                    logs.Add(new RawLogData(
-                        TransactionHash: transaction.TransactionHash,
-                        ContractAddress: log.Address ?? string.Empty,
-                        Topics: log.Topics?.Select(topic => topic?.ToString() ?? string.Empty).ToArray() ?? Array.Empty<string>(),
-                        Data: log.Data ?? string.Empty));
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to load receipt logs for transaction {TransactionHash} in block {BlockNumber}.", transaction.TransactionHash, blockNumber);
-            }
         }
 
         var timestamp = block.Timestamp?.Value is { } unixSeconds
@@ -128,6 +97,7 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
             : DateTimeOffset.UnixEpoch;
 
         var rawBlockData = new RawBlockData(
+            Chain: Chain,
             BlockNumber: block.Number?.Value is { } value ? checked((ulong)value) : blockNumber,
             BlockHash: block.BlockHash ?? string.Empty,
             BlockTimestampUtc: timestamp,
@@ -138,13 +108,11 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
         {
             stopwatch?.Stop();
             _logger.LogDebug(
-                "Loaded block {BlockNumber}: transactions={TransactionCount}, receiptRequests={ReceiptRequestCount}, logs={LogCount}, elapsedMs={ElapsedMilliseconds}, receiptsEnabled={ReceiptsEnabled}.",
+                "Loaded block {BlockNumber}: transactions={TransactionCount}, logs={LogCount}, elapsedMs={ElapsedMilliseconds}.",
                 rawBlockData.BlockNumber,
                 transactions.Count,
-                receiptRequests,
                 logs.Count,
-                stopwatch?.ElapsedMilliseconds ?? 0,
-                _enableTokenTransferReceiptFetching);
+                stopwatch?.ElapsedMilliseconds ?? 0);
         }
 
         return rawBlockData;

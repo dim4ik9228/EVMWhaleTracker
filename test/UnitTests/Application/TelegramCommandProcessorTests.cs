@@ -12,7 +12,7 @@ public sealed class TelegramCommandProcessorTests
     [Fact]
     public async Task ProcessAsync_NonCommandMessage_ReturnsNull()
     {
-        var processor = new TelegramCommandProcessor(new FakeSender());
+        var processor = CreateProcessor(new FakeSender());
 
         var response = await processor.ProcessAsync(
             new TelegramCommandRequest(7777, "alice", "hello there", IsPrivateChat: true),
@@ -24,7 +24,7 @@ public sealed class TelegramCommandProcessorTests
     [Fact]
     public async Task ProcessAsync_StartCommand_ReturnsHelpText()
     {
-        var processor = new TelegramCommandProcessor(new FakeSender());
+        var processor = CreateProcessor(new FakeSender());
 
         var response = await processor.ProcessAsync(
             new TelegramCommandRequest(7777, "alice", "/start", IsPrivateChat: true),
@@ -33,16 +33,17 @@ public sealed class TelegramCommandProcessorTests
         Assert.NotNull(response);
         Assert.Contains("Available commands:", response!.Text);
         Assert.Contains("&lt;address&gt;", response.Text);
+        Assert.Contains("&lt;name&gt;", response.Text);
     }
 
     [Fact]
-    public async Task ProcessAsync_AddCommand_SendsAddRequestAndReturnsConfirmation()
+    public async Task ProcessAsync_AddCommand_WithAlias_SendsAddRequestAndReturnsConfirmation()
     {
         var sender = new FakeSender();
-        var processor = new TelegramCommandProcessor(sender);
+        var processor = CreateProcessor(sender);
 
         var response = await processor.ProcessAsync(
-            new TelegramCommandRequest(7777, "alice", $"/add@EVMWhaleTrackerBot {LowercaseAddress} 1.5", IsPrivateChat: true),
+            new TelegramCommandRequest(7777, "alice", $"/add@EVMWhaleTrackerBot {LowercaseAddress} Main Address", IsPrivateChat: true),
             CancellationToken.None);
 
         Assert.NotNull(response);
@@ -52,7 +53,38 @@ public sealed class TelegramCommandProcessorTests
         var request = Assert.IsType<AddTrackedWalletCommand>(sender.SentRequests[0]);
         Assert.Equal(7777, request.TelegramUserId);
         Assert.Equal(LowercaseAddress, request.RawAddress);
-        Assert.Equal(1.5m, request.MinimumTransactionValue);
+        Assert.Equal(0m, request.MinimumTransactionValue);
+        Assert.Equal("Main Address", request.Alias);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_AddCommand_WithoutAlias_AsksForAliasAndUsesNextMessage()
+    {
+        var sender = new FakeSender();
+        var pendingAliasRequests = new InMemoryPendingWalletAliasRequestStore();
+        var processor = CreateProcessor(sender, pendingAliasRequests);
+
+        var prompt = await processor.ProcessAsync(
+            new TelegramCommandRequest(7777, "alice", $"/add {LowercaseAddress}", IsPrivateChat: true),
+            CancellationToken.None);
+
+        Assert.NotNull(prompt);
+        Assert.Equal("Please give a name to this wallet", prompt!.Text);
+        Assert.Empty(sender.SentRequests);
+        Assert.True(pendingAliasRequests.TryGet(7777, out _));
+
+        var response = await processor.ProcessAsync(
+            new TelegramCommandRequest(7777, "alice", "Main Address", IsPrivateChat: true),
+            CancellationToken.None);
+
+        Assert.NotNull(response);
+        Assert.Contains("Tracked wallet added successfully", response!.Text);
+        Assert.Single(sender.SentRequests);
+        Assert.False(pendingAliasRequests.TryGet(7777, out _));
+
+        var request = Assert.IsType<AddTrackedWalletCommand>(sender.SentRequests[0]);
+        Assert.Equal(LowercaseAddress, request.RawAddress);
+        Assert.Equal("Main Address", request.Alias);
     }
 
     [Fact]
@@ -76,7 +108,7 @@ public sealed class TelegramCommandProcessorTests
                         [SupportedChain.Bsc, SupportedChain.Base])
                 ])
         };
-        var processor = new TelegramCommandProcessor(sender);
+        var processor = CreateProcessor(sender);
 
         var response = await processor.ProcessAsync(
             new TelegramCommandRequest(7777, "alice", "/list", IsPrivateChat: true),
@@ -94,7 +126,7 @@ public sealed class TelegramCommandProcessorTests
     public async Task ProcessAsync_RemoveCommand_SendsRemoveRequestAndReturnsConfirmation()
     {
         var sender = new FakeSender();
-        var processor = new TelegramCommandProcessor(sender);
+        var processor = CreateProcessor(sender);
 
         var response = await processor.ProcessAsync(
             new TelegramCommandRequest(7777, "alice", $"/remove {LowercaseAddress}", IsPrivateChat: true),
@@ -112,7 +144,7 @@ public sealed class TelegramCommandProcessorTests
     [Fact]
     public async Task ProcessAsync_NonPrivateChat_ReturnsPrivateChatGuidance()
     {
-        var processor = new TelegramCommandProcessor(new FakeSender());
+        var processor = CreateProcessor(new FakeSender());
 
         var response = await processor.ProcessAsync(
             new TelegramCommandRequest(7777, "alice", "/help", IsPrivateChat: false),
@@ -121,6 +153,11 @@ public sealed class TelegramCommandProcessorTests
         Assert.NotNull(response);
         Assert.Contains("private chat", response!.Text, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static TelegramCommandProcessor CreateProcessor(
+        FakeSender sender,
+        IPendingWalletAliasRequestStore? pendingAliasRequests = null)
+        => new(sender, pendingAliasRequests ?? new InMemoryPendingWalletAliasRequestStore());
 
     private sealed class FakeSender : ISender
     {

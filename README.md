@@ -26,7 +26,6 @@ When you want to inspect Infura load, set:
 
 ```env
 BLOCKCHAIN_ENABLE_RPC_DIAGNOSTICS=true
-BLOCKCHAIN_ENABLE_TOKEN_TRANSFER_RECEIPT_FETCHING=false
 ```
 
-With diagnostics enabled, the app logs each block’s transaction count, how many receipt requests it made, how many logs it collected, and how long the block load took.
+With diagnostics enabled, the app logs each block's transaction count and how long the block load took.
