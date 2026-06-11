@@ -194,6 +194,104 @@ public sealed class WalletTrackerWorkerTests
         await fixture.StopWorkerAsync(worker);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_EmitsNotification_WhenTrackedAddressAppearsInErc20TransferFromTopic()
+    {
+        await using var fixture = new WalletTrackerWorkerFixture();
+
+        var worker = fixture.CreateWorker();
+        await worker.StartAsync(CancellationToken.None);
+
+        var block = new RawBlockData(
+            Chain: SupportedChain.Bsc,
+            BlockNumber: 105,
+            BlockHash: "0xblock5",
+            BlockTimestampUtc: DateTimeOffset.UtcNow,
+            Transactions: [],
+            Logs:
+            [
+                TokenTransferLog(
+                    transactionHash: "0xtoken-outgoing",
+                    fromAddress: "0x52908400098527886e0f7030069857d2e4169ee7",
+                    toAddress: "0x2222222222222222222222222222222222222222")
+            ]);
+
+        await fixture.Channels.RawBlockDataChannel.Writer.WriteAsync(block);
+
+        var notification = await fixture.ReadNotificationAsync();
+
+        Assert.Equal("0xtoken-outgoing", notification.TransactionHash);
+        Assert.Equal(NotificationOperation.Sent, notification.Operation);
+        Assert.Equal("USDT", notification.AssetSymbol);
+        Assert.Equal("0x2222222222222222222222222222222222222222", notification.CounterpartyAddress);
+
+        await fixture.StopWorkerAsync(worker);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_EmitsSingleSelfTransferNotification_WhenTrackedAddressAppearsInBothErc20TransferTopics()
+    {
+        await using var fixture = new WalletTrackerWorkerFixture();
+
+        var worker = fixture.CreateWorker();
+        await worker.StartAsync(CancellationToken.None);
+
+        var block = new RawBlockData(
+            Chain: SupportedChain.Bsc,
+            BlockNumber: 106,
+            BlockHash: "0xblock6",
+            BlockTimestampUtc: DateTimeOffset.UtcNow,
+            Transactions: [],
+            Logs:
+            [
+                TokenTransferLog(
+                    transactionHash: "0xtoken-self",
+                    fromAddress: "0x52908400098527886e0f7030069857d2e4169ee7",
+                    toAddress: "0x52908400098527886e0f7030069857d2e4169ee7")
+            ]);
+
+        await fixture.Channels.RawBlockDataChannel.Writer.WriteAsync(block);
+
+        var notification = await fixture.ReadNotificationAsync();
+
+        Assert.Equal("0xtoken-self", notification.TransactionHash);
+        Assert.Equal(NotificationOperation.SelfTransfer, notification.Operation);
+        Assert.Equal(TrackedAddress, notification.WalletAddress);
+        Assert.Equal(TrackedAddress, notification.CounterpartyAddress);
+        Assert.False(await fixture.TryReadNotificationAsync(TimeSpan.FromMilliseconds(250)));
+
+        await fixture.StopWorkerAsync(worker);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DoesNotEmitNotification_WhenTokenTransfersAreDisabled()
+    {
+        await using var fixture = new WalletTrackerWorkerFixture(trackTokenTransfers: false);
+
+        var worker = fixture.CreateWorker();
+        await worker.StartAsync(CancellationToken.None);
+
+        var block = new RawBlockData(
+            Chain: SupportedChain.Bsc,
+            BlockNumber: 107,
+            BlockHash: "0xblock7",
+            BlockTimestampUtc: DateTimeOffset.UtcNow,
+            Transactions: [],
+            Logs:
+            [
+                TokenTransferLog(
+                    transactionHash: "0xtoken-disabled",
+                    fromAddress: "0x1111111111111111111111111111111111111111",
+                    toAddress: "0x52908400098527886e0f7030069857d2e4169ee7")
+            ]);
+
+        await fixture.Channels.RawBlockDataChannel.Writer.WriteAsync(block);
+
+        Assert.False(await fixture.TryReadNotificationAsync(TimeSpan.FromMilliseconds(250)));
+
+        await fixture.StopWorkerAsync(worker);
+    }
+
     private sealed class WalletTrackerWorkerFixture : IAsyncDisposable
     {
         private readonly CancellationTokenSource _timeout = new(TimeSpan.FromSeconds(5));
@@ -201,12 +299,14 @@ public sealed class WalletTrackerWorkerTests
 
         private readonly IAssetPriceProvider _priceProvider;
 
-        public WalletTrackerWorkerFixture(IAssetPriceProvider? priceProvider = null)
+        public WalletTrackerWorkerFixture(
+            IAssetPriceProvider? priceProvider = null,
+            bool trackTokenTransfers = true)
         {
             Channels = new OnChainPipelineChannels();
             _priceProvider = priceProvider ?? new FakeAssetPriceProvider();
 
-            var trackedWallet = CreateTrackedWallet();
+            var trackedWallet = CreateTrackedWallet(trackTokenTransfers);
             Cache = new InMemoryCacheService();
             Cache.Add(trackedWallet);
         }
@@ -256,12 +356,13 @@ public sealed class WalletTrackerWorkerTests
             return ValueTask.CompletedTask;
         }
 
-        private static TrackedWallet CreateTrackedWallet()
+        private static TrackedWallet CreateTrackedWallet(bool trackTokenTransfers)
         {
             var result = TrackedWallet.Create(
                 TrackedAddress,
                 7777,
                 minimumTransactionValue: 1m,
+                trackTokenTransfers: trackTokenTransfers,
                 alias: "debabki.eth",
                 enabledChains: [SupportedChain.Bsc]);
             Assert.True(result.IsSuccess);
@@ -271,6 +372,21 @@ public sealed class WalletTrackerWorkerTests
 
     private static string TopicAddress(string address)
         => $"0x{new string('0', 24)}{address[2..].ToLowerInvariant()}";
+
+    private static RawLogData TokenTransferLog(
+        string transactionHash,
+        string fromAddress,
+        string toAddress)
+        => new(
+            TransactionHash: transactionHash,
+            ContractAddress: "0x55d398326f99059fF775485246999027B3197955",
+            Topics:
+            [
+                Erc20TransferLogParser.TransferEventTopic,
+                TopicAddress(fromAddress),
+                TopicAddress(toAddress)
+            ],
+            Data: "0x000000000000000000000000000000000000000000000000000000000f0e1b30");
 
     private sealed class FakeTokenMetadataProvider : ITokenMetadataProvider
     {

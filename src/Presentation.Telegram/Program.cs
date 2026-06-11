@@ -71,17 +71,27 @@ builder.Services.AddHostedService<TrackedWalletCacheHydrationService>();
 
 var blockchainIndexerSection = builder.Configuration.GetSection("BlockchainIndexer");
 var httpRpcUrl = blockchainIndexerSection["HttpRpcUrl"];
-if (!string.IsNullOrWhiteSpace(httpRpcUrl))
+var webSocketRpcUrl = blockchainIndexerSection["WebSocketRpcUrl"];
+if (!string.IsNullOrWhiteSpace(httpRpcUrl) || !string.IsNullOrWhiteSpace(webSocketRpcUrl))
 {
     builder.Services.AddSingleton<IBlockchainBlockSource, NethereumBlockchainBlockSource>();
     builder.Services.AddSingleton<ITokenMetadataProvider, NethereumTokenMetadataProvider>();
     builder.Services.AddHttpClient<IAssetPriceProvider, HttpAssetPriceProvider>();
     builder.Services.AddHostedService<BlockchainIndexerWorker>();
+    if (!string.IsNullOrWhiteSpace(webSocketRpcUrl))
+    {
+        builder.Services.AddHostedService<TokenTransferLogSubscriberWorker>();
+    }
+    else
+    {
+        Console.WriteLine("BlockchainIndexer:WebSocketRpcUrl is not configured. Token transfer log subscriber is disabled.");
+    }
+
     builder.Services.AddHostedService<WalletTrackerWorker>();
 }
 else
 {
-    Console.WriteLine("BlockchainIndexer:HttpRpcUrl is not configured. Blockchain workers are disabled.");
+    Console.WriteLine("Neither BlockchainIndexer:HttpRpcUrl nor BlockchainIndexer:WebSocketRpcUrl is configured. Blockchain workers are disabled.");
 }
 
 var telegramSection = builder.Configuration.GetSection("TelegramBot");

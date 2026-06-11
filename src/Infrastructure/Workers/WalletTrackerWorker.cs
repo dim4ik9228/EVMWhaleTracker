@@ -177,6 +177,21 @@ public sealed class WalletTrackerWorker : BackgroundService
 
         var amount = ConvertRawTokenAmount(transferLog.RawAmount, tokenMetadataResult.Value.Decimals);
 
+        if (transferLog.FromAddress.Equals(transferLog.ToAddress))
+        {
+            await ProcessTokenAddressMatchAsync(
+                transferLog.ToAddress,
+                transferLog.FromAddress,
+                NotificationOperation.SelfTransfer,
+                transferLog,
+                tokenMetadataResult.Value,
+                amount,
+                block,
+                cancellationToken);
+
+            return;
+        }
+
         await ProcessTokenAddressMatchAsync(
             transferLog.ToAddress,
             transferLog.FromAddress,
@@ -187,18 +202,15 @@ public sealed class WalletTrackerWorker : BackgroundService
             block,
             cancellationToken);
 
-        if (!transferLog.FromAddress.Equals(transferLog.ToAddress))
-        {
-            await ProcessTokenAddressMatchAsync(
-                transferLog.FromAddress,
-                transferLog.ToAddress,
-                NotificationOperation.Sent,
-                transferLog,
-                tokenMetadataResult.Value,
-                amount,
-                block,
-                cancellationToken);
-        }
+        await ProcessTokenAddressMatchAsync(
+            transferLog.FromAddress,
+            transferLog.ToAddress,
+            NotificationOperation.Sent,
+            transferLog,
+            tokenMetadataResult.Value,
+            amount,
+            block,
+            cancellationToken);
     }
 
     private async Task ProcessTokenAddressMatchAsync(

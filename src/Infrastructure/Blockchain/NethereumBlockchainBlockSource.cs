@@ -81,7 +81,6 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
         }
 
         var transactions = new List<RawTransactionData>(block.Transactions.Length);
-        var logs = new List<RawLogData>();
 
         foreach (var transaction in block.Transactions)
         {
@@ -102,16 +101,15 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
             BlockHash: block.BlockHash ?? string.Empty,
             BlockTimestampUtc: timestamp,
             Transactions: transactions,
-            Logs: logs);
+            Logs: Array.Empty<RawLogData>());
 
         if (_enableRpcDiagnostics)
         {
             stopwatch?.Stop();
             _logger.LogDebug(
-                "Loaded block {BlockNumber}: transactions={TransactionCount}, logs={LogCount}, elapsedMs={ElapsedMilliseconds}.",
+                "Loaded block {BlockNumber}: transactions={TransactionCount}, elapsedMs={ElapsedMilliseconds}.",
                 rawBlockData.BlockNumber,
                 transactions.Count,
-                logs.Count,
                 stopwatch?.ElapsedMilliseconds ?? 0);
         }
 
