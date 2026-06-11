@@ -8,6 +8,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Infrastructure.Workers;
 
+/// <summary>
+/// Matches native transactions and token logs against tracked wallets and emits structured notification payloads.
+/// </summary>
 public sealed class WalletTrackerWorker : BackgroundService
 {
     private readonly OnChainPipelineChannels _channels;
@@ -153,6 +156,9 @@ public sealed class WalletTrackerWorker : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Parses ERC-20 Transfer logs and evaluates both sides of the transfer against tracked-wallet settings.
+    /// </summary>
     private async Task ProcessLogMatchAsync(RawLogData log, RawBlockData block, CancellationToken cancellationToken)
     {
         if (!_erc20TransferLogParser.TryParse(log, block.Chain, out var transferLog))

@@ -1,5 +1,8 @@
 namespace Domain.Common;
 
+/// <summary>
+/// Represents success or failure for expected business-flow outcomes.
+/// </summary>
 public class Result
 {
     public bool IsSuccess { get; }

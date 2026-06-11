@@ -3,6 +3,9 @@ using Domain.Common;
 
 namespace Infrastructure.Blockchain;
 
+/// <summary>
+/// Static catalog for chain display names, native symbols, and explorer base URLs.
+/// </summary>
 public sealed class StaticChainMetadataProvider : IChainMetadataProvider
 {
     private static readonly IReadOnlyDictionary<SupportedChain, ChainMetadata> Metadata =

@@ -5,6 +5,9 @@ using Domain.ValueObjects;
 
 namespace Infrastructure.Caching;
 
+/// <summary>
+/// Thread-safe in-memory lookup table for tracked addresses and wallet-specific notification settings.
+/// </summary>
 public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposable
 {
     private readonly HashSet<Address> _trackedAddresses = [];

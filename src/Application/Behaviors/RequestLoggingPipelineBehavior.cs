@@ -5,6 +5,9 @@ using Serilog.Context;
 
 namespace Application.Behaviors;
 
+/// <summary>
+/// Logs MediatR request start/completion and attaches Result errors to structured logs.
+/// </summary>
 public sealed class RequestLoggingPipelineBehavior<TRequest, TResponse>(
     ILogger<RequestLoggingPipelineBehavior<TRequest, TResponse>> logger)
     : IPipelineBehavior<TRequest, TResponse>

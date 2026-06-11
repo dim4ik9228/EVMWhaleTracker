@@ -3,6 +3,9 @@ using Domain.ValueObjects;
 
 namespace Application.Abstractions;
 
+/// <summary>
+/// Persistence port for tracked-wallet aggregates.
+/// </summary>
 public interface ITrackedWalletRepository
 {
     Task<IReadOnlyList<TrackedWallet>> ListAllAsync(CancellationToken cancellationToken);

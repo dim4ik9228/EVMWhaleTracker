@@ -6,6 +6,9 @@ using Telegram.Bot.Types.Enums;
 
 namespace Presentation.Telegram.Services;
 
+/// <summary>
+/// Builds compact MarkdownV2 wallet-activity notifications with explorer links.
+/// </summary>
 public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMetadataProvider)
     : ITelegramNotificationRenderer
 {
@@ -63,6 +66,9 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
     private static string Link(string visibleText, string url)
         => $"[{EscapeText(visibleText)}]({EscapeUrl(url)})";
 
+    /// <summary>
+    /// Escapes visible text according to Telegram MarkdownV2 rules.
+    /// </summary>
     private static string EscapeText(string value)
     {
         var builder = new StringBuilder(value.Length * 2);

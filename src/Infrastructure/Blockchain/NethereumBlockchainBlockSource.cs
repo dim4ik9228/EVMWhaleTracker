@@ -14,6 +14,9 @@ using Nethereum.Web3;
 
 namespace Infrastructure.Blockchain;
 
+/// <summary>
+/// Nethereum-backed native block source. Kept available for native transfer tracking when block scanning is enabled.
+/// </summary>
 public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
 {
     private readonly Web3 _web3;

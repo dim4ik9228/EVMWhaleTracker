@@ -5,6 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Infrastructure.Persistence;
 
+/// <summary>
+/// EF Core implementation of tracked-wallet persistence.
+/// </summary>
 public sealed class TrackedWalletRepository : ITrackedWalletRepository
 {
     private readonly AppDbContext _dbContext;

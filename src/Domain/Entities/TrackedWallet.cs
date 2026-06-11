@@ -4,6 +4,9 @@ using Domain.ValueObjects;
 
 namespace Domain.Entities;
 
+/// <summary>
+/// User-owned tracking aggregate with address, alert thresholds, aliases, direction flags, and chain restrictions.
+/// </summary>
 public sealed class TrackedWallet
 {
     private const int MaxAliasLength = 100;
@@ -25,6 +28,9 @@ public sealed class TrackedWallet
 
     public bool TrackTokenTransfers { get; private set; }
 
+    /// <summary>
+    /// Chains where this wallet should emit notifications. An empty set means all supported chains.
+    /// </summary>
     public IReadOnlyCollection<SupportedChain> EnabledChains => DeserializeEnabledChains(_enabledChainsJson);
 
     public DateTimeOffset CreatedAtUtc { get; private set; }
@@ -60,6 +66,9 @@ public sealed class TrackedWallet
         CreatedAtUtc = createdAtUtc;
     }
 
+    /// <summary>
+    /// Creates a tracked wallet from a normalized address value object.
+    /// </summary>
     public static Result<TrackedWallet> Create(
         Address? address,
         long userId,
@@ -106,6 +115,9 @@ public sealed class TrackedWallet
             DateTimeOffset.UtcNow));
     }
 
+    /// <summary>
+    /// Creates a tracked wallet from raw address text.
+    /// </summary>
     public static Result<TrackedWallet> Create(
         string address,
         long userId,
@@ -149,6 +161,9 @@ public sealed class TrackedWallet
             enabledChains);
     }
 
+    /// <summary>
+    /// Updates alert settings while preserving existing alias and chain restrictions when those values are omitted.
+    /// </summary>
     public Result UpdateTrackingConfiguration(
         decimal minimumTransactionValue,
         bool trackIncomingTransfers,

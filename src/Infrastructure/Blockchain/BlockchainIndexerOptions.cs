@@ -2,6 +2,9 @@ using Domain.Common;
 
 namespace Infrastructure.Blockchain;
 
+/// <summary>
+/// Runtime configuration for blockchain RPC connections and optional native block scanning.
+/// </summary>
 public sealed class BlockchainIndexerOptions
 {
     public SupportedChain Chain { get; init; } = SupportedChain.Ethereum;

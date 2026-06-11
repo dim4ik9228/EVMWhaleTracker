@@ -5,6 +5,9 @@ using MediatR;
 
 namespace Application.TrackedWallets;
 
+/// <summary>
+/// Applies tracked-wallet setting changes and refreshes the cached entry.
+/// </summary>
 public sealed class UpdateTrackedWalletSettingsCommandHandler(
     ITrackedWalletRepository trackedWalletRepository,
     ITrackedWalletCacheService trackedWalletCache)

@@ -9,6 +9,9 @@ using Telegram.Bot.Types.Enums;
 
 namespace Presentation.Telegram.Workers;
 
+/// <summary>
+/// Long-running Telegram polling worker for user commands.
+/// </summary>
 public sealed class TelegramUpdateReceiverWorker : BackgroundService
 {
     private readonly ITelegramBotClient _telegramBotClient;

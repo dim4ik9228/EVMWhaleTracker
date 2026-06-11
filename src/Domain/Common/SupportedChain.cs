@@ -1,5 +1,8 @@
 namespace Domain.Common;
 
+/// <summary>
+/// EVM-compatible chains supported by tracking, metadata, pricing, and explorer-link services.
+/// </summary>
 public enum SupportedChain
 {
     Ethereum = 1,

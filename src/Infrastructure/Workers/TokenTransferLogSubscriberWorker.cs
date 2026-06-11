@@ -12,6 +12,9 @@ using Nethereum.RPC.Reactive.Eth.Subscriptions;
 
 namespace Infrastructure.Workers;
 
+/// <summary>
+/// Subscribes to ERC-20/BEP-20 Transfer logs for tracked wallets and forwards matching logs into the processing pipeline.
+/// </summary>
 public sealed class TokenTransferLogSubscriberWorker : BackgroundService
 {
     private static readonly TimeSpan EmptyWalletDelay = TimeSpan.FromSeconds(5);
@@ -72,6 +75,9 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Opens websocket subscriptions for the current cache snapshot, then refreshes periodically to pick up wallet changes.
+    /// </summary>
     private async Task SubscribeUntilRefreshOrDropAsync(
         IReadOnlyCollection<Domain.ValueObjects.Address> trackedAddresses,
         CancellationToken stoppingToken)
@@ -175,6 +181,9 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
         }
     }
 
+    /// <summary>
+    /// Adapts a pushed log into the existing raw pipeline contract consumed by WalletTrackerWorker.
+    /// </summary>
     private RawBlockData ToRawBlockData(FilterLog log)
         => new(
             Chain: _options.Chain,

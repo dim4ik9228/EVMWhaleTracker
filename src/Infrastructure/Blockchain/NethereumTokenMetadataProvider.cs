@@ -8,6 +8,9 @@ using Nethereum.Web3;
 
 namespace Infrastructure.Blockchain;
 
+/// <summary>
+/// Resolves ERC-20 token metadata through on-chain contract calls and caches successful lookups.
+/// </summary>
 public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDisposable
 {
     private const string Erc20MetadataAbi =

@@ -8,6 +8,9 @@ using System.Collections.Concurrent;
 
 namespace Presentation.Telegram.Workers;
 
+/// <summary>
+/// Sends rendered notification payloads to Telegram while respecting global and per-chat rate limits.
+/// </summary>
 public sealed class NotificationDispatcherWorker : BackgroundService
 {
     private readonly OnChainPipelineChannels _channels;

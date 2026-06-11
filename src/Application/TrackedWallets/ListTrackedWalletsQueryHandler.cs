@@ -4,6 +4,9 @@ using MediatR;
 
 namespace Application.TrackedWallets;
 
+/// <summary>
+/// Reads tracked wallets for display in Telegram command responses.
+/// </summary>
 public sealed class ListTrackedWalletsQueryHandler(ITrackedWalletRepository trackedWalletRepository)
     : IRequestHandler<ListTrackedWalletsQuery, Result<IReadOnlyList<TrackedWalletDetails>>>
 {

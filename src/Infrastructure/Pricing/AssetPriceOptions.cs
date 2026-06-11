@@ -2,6 +2,9 @@ using Domain.Common;
 
 namespace Infrastructure.Pricing;
 
+/// <summary>
+/// Configuration for external USD price lookups and short-lived price caching.
+/// </summary>
 public sealed class AssetPriceOptions
 {
     public bool Enabled { get; init; } = true;

@@ -2,6 +2,9 @@ using Domain.Common;
 
 namespace Application.Abstractions;
 
+/// <summary>
+/// Resolves USD prices for native assets and token contracts.
+/// </summary>
 public interface IAssetPriceProvider
 {
     Task<Result<AssetUsdPrice>> GetUsdPriceAsync(
@@ -11,6 +14,9 @@ public interface IAssetPriceProvider
         CancellationToken cancellationToken);
 }
 
+/// <summary>
+/// USD price quote with source metadata for diagnostics.
+/// </summary>
 public sealed record AssetUsdPrice(
     decimal PriceUsd,
     DateTimeOffset QuotedAtUtc,

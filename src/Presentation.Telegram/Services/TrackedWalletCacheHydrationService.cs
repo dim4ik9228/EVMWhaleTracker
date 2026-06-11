@@ -5,6 +5,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Presentation.Telegram.Services;
 
+/// <summary>
+/// Loads persisted tracked wallets into the hot-path in-memory cache during startup.
+/// </summary>
 public sealed class TrackedWalletCacheHydrationService : IHostedService
 {
     private readonly IServiceScopeFactory _serviceScopeFactory;

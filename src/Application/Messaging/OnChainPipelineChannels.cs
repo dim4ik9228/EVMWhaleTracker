@@ -2,6 +2,9 @@ using System.Threading.Channels;
 
 namespace Application.Messaging;
 
+/// <summary>
+/// Bounded in-memory channels that connect ingestion, matching, and notification delivery workers.
+/// </summary>
 public sealed class OnChainPipelineChannels
 {
     public OnChainPipelineChannels(
@@ -25,7 +28,13 @@ public sealed class OnChainPipelineChannels
         });
     }
 
+    /// <summary>
+    /// Carries raw block or log batches into wallet matching.
+    /// </summary>
     public Channel<RawBlockData> RawBlockDataChannel { get; }
 
+    /// <summary>
+    /// Carries structured notifications from matching workers to Telegram delivery.
+    /// </summary>
     public Channel<NotificationPayload> NotificationPayloadChannel { get; }
 }

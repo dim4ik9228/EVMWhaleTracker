@@ -3,6 +3,9 @@ using MediatR;
 
 namespace Application.TrackedWallets;
 
+/// <summary>
+/// Registers a wallet for a Telegram user and seeds its notification preferences.
+/// </summary>
 public sealed record AddTrackedWalletCommand(
     long TelegramUserId,
     string RawAddress,

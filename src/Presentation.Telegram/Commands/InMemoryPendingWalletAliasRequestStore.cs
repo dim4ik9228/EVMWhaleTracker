@@ -2,6 +2,9 @@ using System.Collections.Concurrent;
 
 namespace Presentation.Telegram.Commands;
 
+/// <summary>
+/// Volatile per-user store for the two-step /add wallet alias flow.
+/// </summary>
 public sealed class InMemoryPendingWalletAliasRequestStore : IPendingWalletAliasRequestStore
 {
     private readonly ConcurrentDictionary<long, PendingWalletAliasRequest> _requests = new();

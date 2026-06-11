@@ -38,6 +38,13 @@ Keep each decision compact:
 - decision
 - consequences
 
+## XML Code Comments
+
+- Add concise XML comments to public contracts, records, options, domain models, value objects, and hosted workers.
+- Explain intent, data flow, and non-obvious protocol details; do not restate obvious property names.
+- Use normal implementation comments only for tricky private logic where XML comments would not help callers.
+- Do not add XML comments to generated EF migrations or routine test fixtures.
+
 ## Hygiene
 
 - Keep temporary scratch notes out of root.

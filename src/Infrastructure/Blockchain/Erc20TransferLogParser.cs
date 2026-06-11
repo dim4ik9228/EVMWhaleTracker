@@ -6,10 +6,19 @@ using Domain.ValueObjects;
 
 namespace Infrastructure.Blockchain;
 
+/// <summary>
+/// Decodes standard ERC-20/BEP-20 Transfer logs into typed transfer data.
+/// </summary>
 public sealed class Erc20TransferLogParser
 {
+    /// <summary>
+    /// Keccak-256 event signature for Transfer(address,address,uint256).
+    /// </summary>
     public const string TransferEventTopic = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
+    /// <summary>
+    /// Attempts to parse a raw log as an ERC-20 transfer.
+    /// </summary>
     public bool TryParse(RawLogData log, SupportedChain chain, out Erc20TransferLog transferLog)
     {
         ArgumentNullException.ThrowIfNull(log);
@@ -81,6 +90,9 @@ public sealed class Erc20TransferLogParser
             : value;
 }
 
+/// <summary>
+/// Parsed ERC-20 transfer with decoded indexed addresses and raw token amount.
+/// </summary>
 public sealed record Erc20TransferLog(
     SupportedChain Chain,
     string TransactionHash,

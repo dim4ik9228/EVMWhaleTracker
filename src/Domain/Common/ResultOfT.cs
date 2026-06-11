@@ -1,5 +1,9 @@
 namespace Domain.Common;
 
+/// <summary>
+/// Represents a successful value or a structured failure.
+/// </summary>
+/// <typeparam name="T">The value returned by a successful operation.</typeparam>
 public sealed class Result<T> : Result
 {
     private readonly T? _value;

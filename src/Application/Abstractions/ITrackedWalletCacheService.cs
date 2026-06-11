@@ -4,6 +4,9 @@ using Domain.ValueObjects;
 
 namespace Application.Abstractions;
 
+/// <summary>
+/// Hot-path read model for a tracked wallet, including user-specific notification settings.
+/// </summary>
 public sealed record TrackedWalletCacheEntry(
     Guid Id,
     long TelegramUserId,
@@ -15,6 +18,9 @@ public sealed record TrackedWalletCacheEntry(
     IReadOnlyCollection<SupportedChain> EnabledChains,
     string? Alias)
 {
+    /// <summary>
+    /// Projects the domain aggregate into the in-memory matching model.
+    /// </summary>
     public static TrackedWalletCacheEntry FromEntity(TrackedWallet trackedWallet)
         => new(
             trackedWallet.Id,
@@ -28,6 +34,9 @@ public sealed record TrackedWalletCacheEntry(
             trackedWallet.Alias);
 }
 
+/// <summary>
+/// In-memory tracked-wallet lookup used by blockchain workers to avoid database calls on the hot path.
+/// </summary>
 public interface ITrackedWalletCacheService : ITrackedAddressCacheService
 {
     void ReplaceAll(IEnumerable<TrackedWallet> trackedWallets);

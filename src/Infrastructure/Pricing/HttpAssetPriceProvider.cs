@@ -9,6 +9,9 @@ using Microsoft.Extensions.Options;
 
 namespace Infrastructure.Pricing;
 
+/// <summary>
+/// HTTP-backed asset price provider using CoinGecko for native assets and DexScreener for tokens.
+/// </summary>
 public sealed class HttpAssetPriceProvider : IAssetPriceProvider
 {
     private static readonly Error PriceUnavailable = Error.Validation(

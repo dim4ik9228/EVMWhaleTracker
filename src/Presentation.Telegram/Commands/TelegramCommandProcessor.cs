@@ -7,6 +7,9 @@ using MediatR;
 
 namespace Presentation.Telegram.Commands;
 
+/// <summary>
+/// Parses Telegram command text and dispatches tracked-wallet commands through MediatR.
+/// </summary>
 public sealed class TelegramCommandProcessor(
     ISender sender,
     IPendingWalletAliasRequestStore pendingAliasRequests)

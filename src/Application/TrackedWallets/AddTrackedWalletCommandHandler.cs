@@ -6,6 +6,9 @@ using MediatR;
 
 namespace Application.TrackedWallets;
 
+/// <summary>
+/// Creates a tracked wallet, persists it, and immediately updates the hot-path cache.
+/// </summary>
 public sealed class AddTrackedWalletCommandHandler(
     ITrackedWalletRepository trackedWalletRepository,
     ITrackedWalletCacheService trackedWalletCache)

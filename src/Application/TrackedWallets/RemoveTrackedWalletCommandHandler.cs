@@ -5,6 +5,9 @@ using MediatR;
 
 namespace Application.TrackedWallets;
 
+/// <summary>
+/// Deletes a tracked wallet and removes it from the hot-path cache.
+/// </summary>
 public sealed class RemoveTrackedWalletCommandHandler(
     ITrackedWalletRepository trackedWalletRepository,
     ITrackedWalletCacheService trackedWalletCache)

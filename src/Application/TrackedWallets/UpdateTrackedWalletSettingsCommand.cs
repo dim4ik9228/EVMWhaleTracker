@@ -3,6 +3,9 @@ using MediatR;
 
 namespace Application.TrackedWallets;
 
+/// <summary>
+/// Updates alert preferences for an existing tracked wallet.
+/// </summary>
 public sealed record UpdateTrackedWalletSettingsCommand(
     long TelegramUserId,
     string RawAddress,

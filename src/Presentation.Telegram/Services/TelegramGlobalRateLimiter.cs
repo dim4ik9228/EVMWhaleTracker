@@ -1,5 +1,8 @@
 namespace Presentation.Telegram.Services;
 
+/// <summary>
+/// Process-wide token bucket for Telegram's global message-rate limit.
+/// </summary>
 public sealed class TelegramGlobalRateLimiter : IAsyncDisposable
 {
     private readonly int _permitsPerSecond;

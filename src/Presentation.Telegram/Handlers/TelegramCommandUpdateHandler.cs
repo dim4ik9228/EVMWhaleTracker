@@ -9,6 +9,9 @@ using Telegram.Bot.Types.Enums;
 
 namespace Presentation.Telegram.Handlers;
 
+/// <summary>
+/// Bridges Telegram polling updates into scoped command processing and HTML command responses.
+/// </summary>
 public sealed class TelegramCommandUpdateHandler(
     IServiceScopeFactory serviceScopeFactory,
     TelegramGlobalRateLimiter rateLimiter,

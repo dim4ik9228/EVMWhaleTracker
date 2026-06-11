@@ -5,6 +5,9 @@ using Domain.Common;
 
 namespace Domain.ValueObjects;
 
+/// <summary>
+/// Represents an EVM address in canonical EIP-55 checksum form.
+/// </summary>
 public sealed class Address : IEquatable<Address>
 {
     private const int ExpectedLength = 42;
@@ -48,10 +51,16 @@ public sealed class Address : IEquatable<Address>
         18, 2, 61, 56, 14
     ];
 
+    /// <summary>
+    /// Gets the canonical 0x-prefixed checksum address.
+    /// </summary>
     public string Value { get; }
 
     private Address(string value) => Value = value;
 
+    /// <summary>
+    /// Creates an address and requires the input checksum to be valid when mixed case is supplied.
+    /// </summary>
     public static Result<Address> Create(string? value)
     {
         if (!TryParseAddress(value, requireChecksum: true, out var address, out var error))
@@ -62,8 +71,14 @@ public sealed class Address : IEquatable<Address>
         return Result<Address>.Success(new Address(address));
     }
 
+    /// <summary>
+    /// Creates an address from user input.
+    /// </summary>
     public static Result<Address> From(string? value) => Create(value);
 
+    /// <summary>
+    /// Normalizes a valid EVM address to checksum form without requiring the input to already be checksummed.
+    /// </summary>
     public static Result<Address> Normalize(string? value)
     {
         if (!TryParseAddress(value, requireChecksum: false, out var address, out var error))

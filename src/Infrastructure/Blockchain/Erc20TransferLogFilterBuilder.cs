@@ -2,13 +2,25 @@ using Domain.ValueObjects;
 
 namespace Infrastructure.Blockchain;
 
+/// <summary>
+/// Topic-only websocket filter for ERC-20 Transfer logs.
+/// </summary>
 public sealed record Erc20TransferLogFilter(
     IReadOnlyList<object?> Topics);
 
+/// <summary>
+/// Builds incoming and outgoing Transfer-log filters for tracked wallet addresses.
+/// </summary>
 public static class Erc20TransferLogFilterBuilder
 {
+    /// <summary>
+    /// Maximum number of tracked address topics included in one subscription filter.
+    /// </summary>
     public const int DefaultAddressBatchSize = 100;
 
+    /// <summary>
+    /// Creates paired filters for tracked-wallet receivers and senders.
+    /// </summary>
     public static IReadOnlyList<Erc20TransferLogFilter> Build(
         IReadOnlyCollection<Address> trackedAddresses,
         int addressBatchSize = DefaultAddressBatchSize)
@@ -53,6 +65,9 @@ public static class Erc20TransferLogFilterBuilder
         return filters;
     }
 
+    /// <summary>
+    /// Converts a 20-byte address into the 32-byte indexed-topic representation used by EVM logs.
+    /// </summary>
     public static string ToAddressTopic(Address address)
     {
         ArgumentNullException.ThrowIfNull(address);
