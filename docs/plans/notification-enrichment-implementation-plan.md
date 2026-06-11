@@ -1,5 +1,10 @@
 # Notification Enrichment Implementation Plan
 
+Status: partially implemented
+Date: 2026-06-11
+
+Most notification-enrichment pieces in this plan have been implemented. Keep this file as historical planning context and update it before using it as a new implementation checklist.
+
 This plan covers the roadmap objectives:
 
 - Minimum transaction value filtering

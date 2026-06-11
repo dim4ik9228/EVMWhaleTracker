@@ -20,6 +20,14 @@ The generated `.env` is ignored by git and is used only for local development.
 
 Postgres data is stored in `.docker/postgres-data/`, so the database survives container recreation locally.
 
+## Documentation
+
+- AI/project context: `docs/ai/context.md`
+- AI documentation conventions: `docs/ai/conventions.md`
+- Tracking pipeline architecture: `docs/architecture/tracking-pipeline.md`
+- Architecture decisions: `docs/decisions/`
+- Implementation plans: `docs/plans/`
+
 ## Tracking Mode
 
 The running MVP currently tracks ERC-20/BEP-20 token transfers through a WebSocket log subscription. The app subscribes to `Transfer(address,address,uint256)` logs where a tracked wallet appears in the indexed `from` or `to` topic, so quiet wallets do not cause per-block RPC requests.
