@@ -62,7 +62,7 @@ public sealed class InMemoryCacheServiceTests
 
     private static TrackedWallet CreateTrackedWallet(long userId)
     {
-        var result = TrackedWallet.Create(AddressValue, userId, minimumTransactionValue: 1m);
+        var result = TrackedWallet.Create(AddressValue, userId, minimumUsdValue: 1m);
         Assert.True(result.IsSuccess);
         return result.Value;
     }

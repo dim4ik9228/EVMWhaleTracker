@@ -72,7 +72,7 @@ public sealed class TrackedWalletRepositoryTests
         var result = TrackedWallet.Create(
             normalizedAddressResult.Value,
             userId,
-            minimumTransactionValue: 2m,
+            minimumUsdValue: 2m,
             alias: "MEXC Hot Wallet",
             enabledChains: [SupportedChain.Bsc, SupportedChain.Base]);
         Assert.True(result.IsSuccess);

@@ -7,7 +7,7 @@ Most notification-enrichment pieces in this plan have been implemented. Keep thi
 
 This plan covers the roadmap objectives:
 
-- Minimum transaction value filtering
+- Minimum USD value filtering
 - ERC-20 transfer event matching
 - Token metadata resolution
 - USD valuation on notifications
@@ -43,9 +43,9 @@ Rendered intent:
 
    The worker should detect activity and publish structured data. `Presentation.Telegram` should render Telegram-specific Markdown. This keeps blockchain processing independent from Telegram formatting rules.
 
-2. Treat minimum transaction filtering as a USD threshold for enriched notifications.
+2. Treat minimum value filtering as a USD threshold for enriched notifications.
 
-   The existing `MinimumTransactionValue` name is ambiguous once native and ERC-20 transfers are both supported. For this feature, the recommended model is `MinimumUsdValue` or a clearly documented migration of `MinimumTransactionValue` to USD semantics. USD filtering gives one consistent threshold across ETH, BNB, USDT, WETH, and other assets.
+   The old `MinimumTransactionValue` name was ambiguous once native and ERC-20 transfers were both supported. The model now uses `MinimumUsdValue`, backed by a database column rename migration, so thresholds are consistently expressed in USD across ETH, BNB, USDT, WETH, and other assets.
 
 3. Use MarkdownV2 for notification messages.
 
@@ -53,7 +53,7 @@ Rendered intent:
 
 4. Keep valuation failures non-fatal.
 
-   If pricing is unavailable, the notification can still be sent with the token/native amount and omit the USD segment. If a wallet has a non-zero USD threshold and USD valuation is unavailable, skip the notification by default and log the skip reason.
+   If pricing is unavailable, the notification is still sent with the token/native amount and omits the USD segment. A non-zero USD threshold is only applied after a USD value is successfully resolved.
 
 5. Keep chain support explicit.
 
@@ -364,7 +364,7 @@ Filtering behavior:
 
 - Calculate `usdValue = amount * priceUsd`.
 - If `MinimumUsdValue <= 0`, do not require a price to send the notification.
-- If `MinimumUsdValue > 0` and price resolution fails, skip the notification and log the reason.
+- If `MinimumUsdValue > 0` and price resolution fails, send the notification without USD data and log that the threshold could not be evaluated.
 - If `usdValue < MinimumUsdValue`, skip the notification.
 
 Formatting behavior:
@@ -515,7 +515,7 @@ Received: 252.39 USDT (~$252) From: [0x09...1ed7](...)
 
 ## Open Decisions Before Coding
 
-- Whether to rename `MinimumTransactionValue` to `MinimumUsdValue` now, or keep the old name with documented USD semantics until a later migration.
+- `MinimumTransactionValue` has been renamed to `MinimumUsdValue`; existing databases migrate through a column rename.
 - Which pricing provider to use for MVP.
 - Whether BNB Chain should display as `BNB`, `BSC`, or `BNB Chain` in the first line.
 - Whether the transaction link text should always be `Tx hash` or a shortened transaction hash.

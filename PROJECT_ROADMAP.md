@@ -91,7 +91,7 @@ Tasks:
 
 - Add a domain overload such as `TrackedWallet.Create(Address address, long userId, ...)`.
 - Keep string parsing and address normalization outside the aggregate.
-- Decide whether `MinimumTransactionValue` is denominated in ETH, native chain units, or another normalized unit.
+- Decide whether `MinimumUsdValue` is denominated in ETH, native chain units, or another normalized unit.
 - Add optional fields only if needed for MVP:
   - `IsActive`
   - `ChainId`
@@ -105,7 +105,7 @@ The aggregate should enforce tracking rules, but it should not need to know how 
 Recommended tests:
 
 - Creating a wallet from an `Address` value object succeeds.
-- Negative minimum transaction values fail.
+- Negative Minimum USD values fail.
 - Invalid Telegram user ids fail.
 - Updating tracking settings preserves invariants.
 
@@ -169,7 +169,7 @@ if (addressResult.IsFailure)
     return Result.Failure(addressResult.Error);
 }
 
-var walletResult = TrackedWallet.Create(addressResult.Value, command.TelegramUserId, command.MinimumTransactionValue);
+var walletResult = TrackedWallet.Create(addressResult.Value, command.TelegramUserId, command.MinimumUsdValue);
 if (walletResult.IsFailure)
 {
     return Result.Failure(walletResult.Error);
@@ -261,7 +261,7 @@ Current behavior:
 
 Needed improvements:
 
-- Apply `MinimumTransactionValue`.
+- Apply `MinimumUsdValue`.
 - Respect `TrackIncomingTransfers`.
 - Respect `TrackOutgoingTransfers`.
 - Respect `TrackTokenTransfers`.
@@ -446,7 +446,7 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [x] Startup cache synchronization
 - [x] Runtime cache updates from add/remove commands
 - [x] Wallet aliases
-- [x] Minimum transaction value filtering
+- [x] Minimum USD value filtering
 - [x] ERC-20 transfer event matching
 - [x] Token metadata resolution
 - [x] USD valuation on notifications
@@ -471,7 +471,7 @@ Tasks:
 - Open a compact settings menu from the notification instead of forcing users to use text commands.
 - Allow users to edit:
   - wallet alias
-  - minimum transaction value
+  - Minimum USD value
   - included chains/networks
   - transfer direction preferences
 - Persist changes immediately and refresh the in-memory cache after confirmation.

@@ -13,5 +13,6 @@ public enum SupportedChain
     Optimism = 10,
     Celo = 42220,
     Arbitrum = 42161,
-    Base = 8453
+    Base = 8453,
+    HyperEvm = 999
 }

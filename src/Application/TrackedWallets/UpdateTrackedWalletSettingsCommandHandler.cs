@@ -34,7 +34,7 @@ public sealed class UpdateTrackedWalletSettingsCommandHandler(
         }
 
         var updateResult = trackedWallet.UpdateTrackingConfiguration(
-            request.MinimumTransactionValue,
+            request.MinimumUsdValue,
             request.TrackIncomingTransfers,
             request.TrackOutgoingTransfers,
             request.TrackTokenTransfers,

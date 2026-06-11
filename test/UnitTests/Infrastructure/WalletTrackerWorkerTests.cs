@@ -361,7 +361,7 @@ public sealed class WalletTrackerWorkerTests
             var result = TrackedWallet.Create(
                 TrackedAddress,
                 7777,
-                minimumTransactionValue: 1m,
+                minimumUsdValue: 1m,
                 trackTokenTransfers: trackTokenTransfers,
                 alias: "debabki.eth",
                 enabledChains: [SupportedChain.Bsc]);

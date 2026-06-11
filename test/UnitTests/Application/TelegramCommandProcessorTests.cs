@@ -53,7 +53,7 @@ public sealed class TelegramCommandProcessorTests
         var request = Assert.IsType<AddTrackedWalletCommand>(sender.SentRequests[0]);
         Assert.Equal(7777, request.TelegramUserId);
         Assert.Equal(LowercaseAddress, request.RawAddress);
-        Assert.Equal(0m, request.MinimumTransactionValue);
+        Assert.Equal(0m, request.MinimumUsdValue);
         Assert.Equal("Main Address", request.Alias);
     }
 
@@ -117,7 +117,7 @@ public sealed class TelegramCommandProcessorTests
         Assert.NotNull(response);
         Assert.Contains("Tracked wallets:", response!.Text);
         Assert.Contains("Alias:", response.Text);
-        Assert.Contains("Minimum transaction value:", response.Text);
+        Assert.Contains("Minimum USD value:", response.Text);
         Assert.Contains("Outgoing: <code>off</code>", response.Text);
         Assert.Contains("Enabled chains:", response.Text);
     }

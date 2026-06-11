@@ -11,6 +11,10 @@ public sealed class AssetPriceOptions
 
     public TimeSpan CacheDuration { get; init; } = TimeSpan.FromSeconds(60);
 
+    public string CoinGeckoSimplePriceUrl { get; init; } = "https://api.coingecko.com/api/v3/simple/price";
+
+    public string DexScreenerTokenUrl { get; init; } = "https://api.dexscreener.com/latest/dex/tokens";
+
     public IReadOnlyDictionary<SupportedChain, string> NativeCoinGeckoIds { get; init; }
         = new Dictionary<SupportedChain, string>
         {
@@ -22,7 +26,8 @@ public sealed class AssetPriceOptions
             [SupportedChain.Optimism] = "ethereum",
             [SupportedChain.Celo] = "celo",
             [SupportedChain.Arbitrum] = "ethereum",
-            [SupportedChain.Base] = "ethereum"
+            [SupportedChain.Base] = "ethereum",
+            [SupportedChain.HyperEvm] = "hyperliquid"
         };
 
     public IReadOnlyDictionary<SupportedChain, string> DexScreenerChainIds { get; init; }
@@ -36,6 +41,7 @@ public sealed class AssetPriceOptions
             [SupportedChain.Optimism] = "optimism",
             [SupportedChain.Celo] = "celo",
             [SupportedChain.Arbitrum] = "arbitrum",
-            [SupportedChain.Base] = "base"
+            [SupportedChain.Base] = "base",
+            [SupportedChain.HyperEvm] = "hyperevm"
         };
 }

@@ -24,7 +24,7 @@ public sealed class TrackedWalletTests
         var result = TrackedWallet.Create(
             ChecksummedAddress,
             userId: 12345,
-            minimumTransactionValue: 1.5m,
+            minimumUsdValue: 1.5m,
             trackIncomingTransfers: true,
             trackOutgoingTransfers: false,
             trackTokenTransfers: true,
@@ -34,7 +34,7 @@ public sealed class TrackedWalletTests
         Assert.True(result.IsSuccess);
         Assert.Equal(ChecksummedAddress, result.Value.Address);
         Assert.Equal(12345, result.Value.UserId);
-        Assert.Equal(1.5m, result.Value.MinimumTransactionValue);
+        Assert.Equal(1.5m, result.Value.MinimumUsdValue);
         Assert.Equal("MEXC Hot Wallet", result.Value.Alias);
         Assert.True(result.Value.TrackIncomingTransfers);
         Assert.False(result.Value.TrackOutgoingTransfers);
@@ -83,7 +83,7 @@ public sealed class TrackedWalletTests
 
         var wallet = createResult.Value;
         var updateResult = wallet.UpdateTrackingConfiguration(
-            minimumTransactionValue: 10m,
+            minimumUsdValue: 10m,
             trackIncomingTransfers: false,
             trackOutgoingTransfers: true,
             trackTokenTransfers: false,
@@ -91,7 +91,7 @@ public sealed class TrackedWalletTests
             enabledChains: [SupportedChain.Ethereum, SupportedChain.Base]);
 
         Assert.True(updateResult.IsSuccess);
-        Assert.Equal(10m, wallet.MinimumTransactionValue);
+        Assert.Equal(10m, wallet.MinimumUsdValue);
         Assert.Equal("Treasury", wallet.Alias);
         Assert.False(wallet.TrackIncomingTransfers);
         Assert.True(wallet.TrackOutgoingTransfers);
@@ -103,19 +103,19 @@ public sealed class TrackedWalletTests
     [Fact]
     public void UpdateTrackingConfiguration_WithNegativeValue_FailsAndKeepsExistingSettings()
     {
-        var createResult = TrackedWallet.Create(ChecksummedAddress, userId: 12345, minimumTransactionValue: 2m);
+        var createResult = TrackedWallet.Create(ChecksummedAddress, userId: 12345, minimumUsdValue: 2m);
         Assert.True(createResult.IsSuccess);
 
         var wallet = createResult.Value;
         var updateResult = wallet.UpdateTrackingConfiguration(
-            minimumTransactionValue: -1m,
+            minimumUsdValue: -1m,
             trackIncomingTransfers: false,
             trackOutgoingTransfers: false,
             trackTokenTransfers: false);
 
         Assert.True(updateResult.IsFailure);
-        Assert.Equal(Errors.TrackedWallet.MinimumTransactionValueMustBeNonNegative, updateResult.Error);
-        Assert.Equal(2m, wallet.MinimumTransactionValue);
+        Assert.Equal(Errors.TrackedWallet.MinimumUsdValueMustBeNonNegative, updateResult.Error);
+        Assert.Equal(2m, wallet.MinimumUsdValue);
         Assert.True(wallet.TrackIncomingTransfers);
         Assert.True(wallet.TrackOutgoingTransfers);
         Assert.True(wallet.TrackTokenTransfers);

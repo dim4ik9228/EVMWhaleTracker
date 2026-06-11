@@ -136,7 +136,7 @@ public sealed class TelegramCommandProcessor(
 
             Alias: <code>{HtmlEncode(wallet.Alias ?? "none")}</code>
             Address: <code>{HtmlEncode(wallet.Address)}</code>
-            Minimum transaction value: <code>{wallet.MinimumTransactionValue.ToString(CultureInfo.InvariantCulture)}</code>
+            Minimum USD value: <code>{wallet.MinimumUsdValue.ToString(CultureInfo.InvariantCulture)}</code>
             Incoming transfers: <code>{FormatOnOff(wallet.TrackIncomingTransfers)}</code>
             Outgoing transfers: <code>{FormatOnOff(wallet.TrackOutgoingTransfers)}</code>
             Token transfers: <code>{FormatOnOff(wallet.TrackTokenTransfers)}</code>
@@ -171,7 +171,7 @@ public sealed class TelegramCommandProcessor(
                 $"""
                 {index + 1}. <code>{HtmlEncode(wallet.Address)}</code>
                    Alias: <code>{HtmlEncode(wallet.Alias ?? "none")}</code>
-                   Minimum transaction value: <code>{wallet.MinimumTransactionValue.ToString(CultureInfo.InvariantCulture)}</code>
+                   Minimum USD value: <code>{wallet.MinimumUsdValue.ToString(CultureInfo.InvariantCulture)}</code>
                    Incoming: <code>{FormatOnOff(wallet.TrackIncomingTransfers)}</code>, Outgoing: <code>{FormatOnOff(wallet.TrackOutgoingTransfers)}</code>, Token: <code>{FormatOnOff(wallet.TrackTokenTransfers)}</code>
                    Enabled chains: <code>{HtmlEncode(FormatChains(wallet.EnabledChains))}</code>
                 """.TrimEnd());

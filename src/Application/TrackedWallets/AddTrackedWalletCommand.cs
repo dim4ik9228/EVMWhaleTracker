@@ -9,7 +9,7 @@ namespace Application.TrackedWallets;
 public sealed record AddTrackedWalletCommand(
     long TelegramUserId,
     string RawAddress,
-    decimal MinimumTransactionValue = 0m,
+    decimal MinimumUsdValue = 0m,
     bool TrackIncomingTransfers = true,
     bool TrackOutgoingTransfers = true,
     bool TrackTokenTransfers = true,

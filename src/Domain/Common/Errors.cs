@@ -35,9 +35,9 @@ public static class Errors
             "TrackedWallet.UserId",
             "Telegram user ids must be positive.");
 
-        public static readonly Error MinimumTransactionValueMustBeNonNegative = Error.Validation(
-            "TrackedWallet.MinimumTransactionValue",
-            "Minimum transaction value cannot be negative.");
+        public static readonly Error MinimumUsdValueMustBeNonNegative = Error.Validation(
+            "TrackedWallet.MinimumUsdValue",
+            "Minimum USD value cannot be negative.");
 
         public static readonly Error AliasTooLong = Error.Validation(
             "TrackedWallet.Alias",

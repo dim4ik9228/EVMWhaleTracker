@@ -127,7 +127,7 @@ public sealed class WalletTrackerWorker : BackgroundService
                 tokenContractAddress: null,
                 chainMetadata.NativeSymbol,
                 transaction.Value,
-                entry.MinimumTransactionValue,
+                entry.MinimumUsdValue,
                 cancellationToken);
 
             if (!usdValue.ShouldSend)
@@ -246,7 +246,7 @@ public sealed class WalletTrackerWorker : BackgroundService
                 transferLog.TokenContractAddress,
                 tokenMetadata.Symbol,
                 amount,
-                entry.MinimumTransactionValue,
+                entry.MinimumUsdValue,
                 cancellationToken);
 
             if (!usdValue.ShouldSend)
@@ -280,7 +280,7 @@ public sealed class WalletTrackerWorker : BackgroundService
         string? tokenContractAddress,
         string assetSymbol,
         decimal amount,
-        decimal minimumTransactionValue,
+        decimal MinimumUsdValue,
         CancellationToken cancellationToken)
     {
         var priceResult = await _assetPriceProvider.GetUsdPriceAsync(
@@ -300,7 +300,7 @@ public sealed class WalletTrackerWorker : BackgroundService
         }
 
         var value = amount * priceResult.Value.PriceUsd;
-        return value >= minimumTransactionValue
+        return value >= MinimumUsdValue
             ? new UsdResolution(true, value)
             : new UsdResolution(false, value);
     }

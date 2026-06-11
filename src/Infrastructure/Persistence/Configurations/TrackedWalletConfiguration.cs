@@ -21,7 +21,7 @@ public sealed class TrackedWalletConfiguration : IEntityTypeConfiguration<Tracke
             .IsRequired();
 
         builder.Property(wallet => wallet.UserId).IsRequired();
-        builder.Property(wallet => wallet.MinimumTransactionValue).HasPrecision(38, 18);
+        builder.Property(wallet => wallet.MinimumUsdValue).HasPrecision(38, 18);
         builder.Property(wallet => wallet.Alias)
             .HasMaxLength(100);
         builder.Property(wallet => wallet.TrackIncomingTransfers).IsRequired();

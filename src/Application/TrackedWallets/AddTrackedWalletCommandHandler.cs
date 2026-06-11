@@ -37,7 +37,7 @@ public sealed class AddTrackedWalletCommandHandler(
         var createResult = TrackedWallet.Create(
             addressResult.Value,
             request.TelegramUserId,
-            request.MinimumTransactionValue,
+            request.MinimumUsdValue,
             request.TrackIncomingTransfers,
             request.TrackOutgoingTransfers,
             request.TrackTokenTransfers,

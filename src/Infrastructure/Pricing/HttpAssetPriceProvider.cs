@@ -14,6 +14,9 @@ namespace Infrastructure.Pricing;
 /// </summary>
 public sealed class HttpAssetPriceProvider : IAssetPriceProvider
 {
+    private const string CoinGeckoSource = "CoinGecko";
+    private const string DexScreenerSource = "DexScreener";
+
     private static readonly Error PriceUnavailable = Error.Validation(
         "AssetPrice.Unavailable",
         "Asset USD price could not be resolved.");
@@ -58,8 +61,8 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
         }
 
         var price = string.IsNullOrWhiteSpace(tokenContractAddress)
-            ? await GetNativePriceAsync(chain, cancellationToken)
-            : await GetTokenPriceAsync(chain, tokenContractAddress, cancellationToken);
+            ? await GetNativeTokenPriceAsync(chain, cancellationToken)
+            : await GetERC20TokenPriceAsync(chain, tokenContractAddress, cancellationToken);
 
         if (price.IsSuccess)
         {
@@ -69,7 +72,7 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
         return price;
     }
 
-    private async Task<Result<AssetUsdPrice>> GetNativePriceAsync(
+    private async Task<Result<AssetUsdPrice>> GetNativeTokenPriceAsync(
         SupportedChain chain,
         CancellationToken cancellationToken)
     {
@@ -80,7 +83,7 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
 
         try
         {
-            var url = $"https://api.coingecko.com/api/v3/simple/price?ids={Uri.EscapeDataString(coinId)}&vs_currencies=usd";
+            var url = BuildCoinGeckoSimplePriceUrl(coinId);
             using var document = await _httpClient.GetFromJsonAsync<JsonDocument>(url, cancellationToken);
             if (document is null ||
                 !document.RootElement.TryGetProperty(coinId, out var coinElement) ||
@@ -90,7 +93,7 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
                 return Result<AssetUsdPrice>.Failure(PriceUnavailable);
             }
 
-            return Result<AssetUsdPrice>.Success(new AssetUsdPrice(priceUsd, DateTimeOffset.UtcNow, "CoinGecko"));
+            return Result<AssetUsdPrice>.Success(new AssetUsdPrice(priceUsd, DateTimeOffset.UtcNow, CoinGeckoSource));
         }
         catch (Exception ex)
         {
@@ -99,7 +102,7 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
         }
     }
 
-    private async Task<Result<AssetUsdPrice>> GetTokenPriceAsync(
+    private async Task<Result<AssetUsdPrice>> GetERC20TokenPriceAsync(
         SupportedChain chain,
         string tokenContractAddress,
         CancellationToken cancellationToken)
@@ -111,7 +114,7 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
 
         try
         {
-            var url = $"https://api.dexscreener.com/latest/dex/tokens/{Uri.EscapeDataString(tokenContractAddress)}";
+            var url = BuildDexScreenerTokenUrl(tokenContractAddress);
             using var document = await _httpClient.GetFromJsonAsync<JsonDocument>(url, cancellationToken);
             if (document is null ||
                 !document.RootElement.TryGetProperty("pairs", out var pairsElement) ||
@@ -132,7 +135,7 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
                 var priceText = priceUsdElement.GetString();
                 if (decimal.TryParse(priceText, NumberStyles.Number, CultureInfo.InvariantCulture, out var priceUsd))
                 {
-                    return Result<AssetUsdPrice>.Success(new AssetUsdPrice(priceUsd, DateTimeOffset.UtcNow, "DexScreener"));
+                    return Result<AssetUsdPrice>.Success(new AssetUsdPrice(priceUsd, DateTimeOffset.UtcNow, DexScreenerSource));
                 }
             }
 
@@ -144,4 +147,12 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
             return Result<AssetUsdPrice>.Failure(PriceUnavailable);
         }
     }
+
+    private string BuildCoinGeckoSimplePriceUrl(string coinId)
+        => $"{TrimTrailingSlash(_options.CoinGeckoSimplePriceUrl)}?ids={Uri.EscapeDataString(coinId)}&vs_currencies=usd";
+
+    private string BuildDexScreenerTokenUrl(string tokenContractAddress)
+        => $"{TrimTrailingSlash(_options.DexScreenerTokenUrl)}/{Uri.EscapeDataString(tokenContractAddress)}";
+
+    private static string TrimTrailingSlash(string value) => value.TrimEnd('/');
 }

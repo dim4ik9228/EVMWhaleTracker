@@ -18,7 +18,7 @@ public sealed class TrackedWallet
 
     public long UserId { get; private set; }
 
-    public decimal MinimumTransactionValue { get; private set; }
+    public decimal MinimumUsdValue { get; private set; }
 
     public string? Alias { get; private set; }
 
@@ -46,7 +46,7 @@ public sealed class TrackedWallet
         Guid id,
         Address address,
         long userId,
-        decimal minimumTransactionValue,
+        decimal minimumUsdValue,
         bool trackIncomingTransfers,
         bool trackOutgoingTransfers,
         bool trackTokenTransfers,
@@ -57,7 +57,7 @@ public sealed class TrackedWallet
         Id = id;
         Address = address;
         UserId = userId;
-        MinimumTransactionValue = minimumTransactionValue;
+        MinimumUsdValue = minimumUsdValue;
         Alias = alias;
         TrackIncomingTransfers = trackIncomingTransfers;
         TrackOutgoingTransfers = trackOutgoingTransfers;
@@ -72,7 +72,7 @@ public sealed class TrackedWallet
     public static Result<TrackedWallet> Create(
         Address? address,
         long userId,
-        decimal minimumTransactionValue = 0m,
+        decimal minimumUsdValue = 0m,
         bool trackIncomingTransfers = true,
         bool trackOutgoingTransfers = true,
         bool trackTokenTransfers = true,
@@ -89,9 +89,9 @@ public sealed class TrackedWallet
             return Result<TrackedWallet>.Failure(Errors.TrackedWallet.UserIdMustBePositive);
         }
 
-        if (minimumTransactionValue < 0m)
+        if (minimumUsdValue < 0m)
         {
-            return Result<TrackedWallet>.Failure(Errors.TrackedWallet.MinimumTransactionValueMustBeNonNegative);
+            return Result<TrackedWallet>.Failure(Errors.TrackedWallet.MinimumUsdValueMustBeNonNegative);
         }
 
         var aliasResult = NormalizeAlias(alias);
@@ -106,7 +106,7 @@ public sealed class TrackedWallet
             Guid.NewGuid(),
             address,
             userId,
-            minimumTransactionValue,
+            minimumUsdValue,
             trackIncomingTransfers,
             trackOutgoingTransfers,
             trackTokenTransfers,
@@ -121,7 +121,7 @@ public sealed class TrackedWallet
     public static Result<TrackedWallet> Create(
         string address,
         long userId,
-        decimal minimumTransactionValue = 0m,
+        decimal minimumUsdValue = 0m,
         bool trackIncomingTransfers = true,
         bool trackOutgoingTransfers = true,
         bool trackTokenTransfers = true,
@@ -133,9 +133,9 @@ public sealed class TrackedWallet
             return Result<TrackedWallet>.Failure(Errors.TrackedWallet.UserIdMustBePositive);
         }
 
-        if (minimumTransactionValue < 0m)
+        if (minimumUsdValue < 0m)
         {
-            return Result<TrackedWallet>.Failure(Errors.TrackedWallet.MinimumTransactionValueMustBeNonNegative);
+            return Result<TrackedWallet>.Failure(Errors.TrackedWallet.MinimumUsdValueMustBeNonNegative);
         }
 
         var aliasResult = NormalizeAlias(alias);
@@ -153,7 +153,7 @@ public sealed class TrackedWallet
         return Create(
             addressResult.Value,
             userId,
-            minimumTransactionValue,
+            minimumUsdValue,
             trackIncomingTransfers,
             trackOutgoingTransfers,
             trackTokenTransfers,
@@ -165,16 +165,16 @@ public sealed class TrackedWallet
     /// Updates alert settings while preserving existing alias and chain restrictions when those values are omitted.
     /// </summary>
     public Result UpdateTrackingConfiguration(
-        decimal minimumTransactionValue,
+        decimal minimumUsdValue,
         bool trackIncomingTransfers,
         bool trackOutgoingTransfers,
         bool trackTokenTransfers,
         string? alias = null,
         IEnumerable<SupportedChain>? enabledChains = null)
     {
-        if (minimumTransactionValue < 0m)
+        if (minimumUsdValue < 0m)
         {
-            return Result.Failure(Errors.TrackedWallet.MinimumTransactionValueMustBeNonNegative);
+            return Result.Failure(Errors.TrackedWallet.MinimumUsdValueMustBeNonNegative);
         }
 
         var aliasResult = NormalizeAlias(alias);
@@ -183,7 +183,7 @@ public sealed class TrackedWallet
             return Result.Failure(aliasResult.Error);
         }
 
-        MinimumTransactionValue = minimumTransactionValue;
+        MinimumUsdValue = minimumUsdValue;
         TrackIncomingTransfers = trackIncomingTransfers;
         TrackOutgoingTransfers = trackOutgoingTransfers;
         TrackTokenTransfers = trackTokenTransfers;
