@@ -17,6 +17,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
     private readonly ITelegramBotClient _telegramBotClient;
     private readonly TelegramGlobalRateLimiter _rateLimiter;
     private readonly ITelegramNotificationRenderer _notificationRenderer;
+    private readonly TelegramNotificationSendRetryPolicy _sendRetryPolicy = new();
     private readonly ConcurrentDictionary<long, SemaphoreSlim> _chatLimiters = new();
     private readonly ILogger<NotificationDispatcherWorker> _logger;
     public NotificationDispatcherWorker(
@@ -50,27 +51,22 @@ public sealed class NotificationDispatcherWorker : BackgroundService
             }
 
             var chatLimiter = _chatLimiters.GetOrAdd(payload.TelegramUserId, _ => new SemaphoreSlim(1, 1));
+            var chatLimiterAcquired = false;
 
             try
             {
                 await chatLimiter.WaitAsync(stoppingToken);
-                await _rateLimiter.WaitAsync(stoppingToken);
+                chatLimiterAcquired = true;
                 var renderedMessage = _notificationRenderer.Render(payload);
-                await _telegramBotClient.SendMessage(
-                    chatId: payload.TelegramUserId,
-                    text: renderedMessage.Text,
-                    parseMode: renderedMessage.ParseMode,
-                    cancellationToken: stoppingToken);
-
-                _logger.LogInformation(
-                    "Sent Telegram notification to chat {ChatId} for wallet {WalletAddress} and transaction {TransactionHash}.",
-                    payload.TelegramUserId,
-                    payload.WalletAddress,
-                    payload.TransactionHash);
-            }
-            catch (ApiRequestException ex)
-            {
-                _logger.LogWarning(ex, "Telegram API rejected notification for chat {ChatId} with code {ErrorCode}.", payload.TelegramUserId, ex.ErrorCode);
+                var sent = await SendWithRetryAsync(payload, renderedMessage, stoppingToken);
+                if (sent)
+                {
+                    _logger.LogInformation(
+                        "Sent Telegram notification to chat {ChatId} for wallet {WalletAddress} and transaction {TransactionHash}.",
+                        payload.TelegramUserId,
+                        payload.WalletAddress,
+                        payload.TransactionHash);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -82,7 +78,10 @@ public sealed class NotificationDispatcherWorker : BackgroundService
             }
             finally
             {
-                _ = ReleaseChatLimiterAfterDelayAsync(chatLimiter, stoppingToken);
+                if (chatLimiterAcquired)
+                {
+                    _ = ReleaseChatLimiterAfterDelayAsync(chatLimiter, stoppingToken);
+                }
             }
         }
     }
@@ -91,6 +90,24 @@ public sealed class NotificationDispatcherWorker : BackgroundService
     {
         await base.StopAsync(cancellationToken);
     }
+
+    private Task<bool> SendWithRetryAsync(
+        NotificationPayload payload,
+        TelegramRenderedMessage renderedMessage,
+        CancellationToken cancellationToken)
+        => _sendRetryPolicy.SendAsync(
+            payload.TelegramUserId,
+            waitForPermitAsync: ct => _rateLimiter.WaitAsync(ct),
+            sendAsync: async ct =>
+            {
+                await _telegramBotClient.SendMessage(
+                    chatId: payload.TelegramUserId,
+                    text: renderedMessage.Text,
+                    parseMode: renderedMessage.ParseMode,
+                    cancellationToken: ct);
+            },
+            _logger,
+            cancellationToken);
 
     private static async Task ReleaseChatLimiterAfterDelayAsync(SemaphoreSlim chatLimiter, CancellationToken cancellationToken)
     {
@@ -104,4 +121,5 @@ public sealed class NotificationDispatcherWorker : BackgroundService
             // Expected when the host is shutting down.
         }
     }
+
 }

@@ -1,9 +1,9 @@
 # Notification Enrichment Implementation Plan
 
-Status: partially implemented
+Status: completed
 Date: 2026-06-11
 
-Most notification-enrichment pieces in this plan have been implemented. Keep this file as historical planning context and update it before using it as a new implementation checklist.
+The product-active notification enrichment work in this plan is complete. Native transfer enrichment is implemented in code but intentionally disabled/deferred at runtime. Inline notification editing remains outside this plan.
 
 This plan covers the roadmap objectives:
 
@@ -220,7 +220,15 @@ Acceptance criteria:
 
 ## Phase 3: Native Transfer Filtering
 
-Goal: apply direction settings and threshold filtering to native transfers.
+Status: implemented in code, but deferred/disabled in the active runtime.
+
+Goal: apply direction settings and threshold filtering to native transfers when native block scanning is enabled again.
+
+Runtime note:
+
+- Native transfer enrichment is not product-active right now by decision.
+- The native block-scanning path remains available in code, but the active host uses token-log subscriptions instead of fetching every block.
+- Treat the tasks and acceptance criteria below as deferred until native transfer alerts are worth the extra RPC/API usage.
 
 Tasks:
 
@@ -452,17 +460,20 @@ Tasks:
 - Use `renderedMessage.ParseMode` instead of hard-coded `ParseMode.Markdown`.
 - Keep the existing global and per-chat rate limits.
 - Continue logging wallet address and transaction hash after sending.
-- Add retry handling for Telegram `RetryAfter` as a follow-up if not implemented in this pass.
+- Add retry handling for Telegram `RetryAfter`.
 
 Acceptance criteria:
 
 - Notification dispatcher sends MarkdownV2 messages.
 - Existing command responses can continue using HTML independently.
 - Telegram formatting failure is logged with enough context to debug the payload.
+- Telegram `RetryAfter` responses are delayed and retried once.
 
 ## Phase 9: Tests
 
-Add focused coverage at each layer.
+Status: completed.
+
+Focused coverage exists at each layer.
 
 Domain/Application:
 
@@ -502,6 +513,8 @@ Received: 252.39 USDT (~$252) From: [0x09...1ed7](...)
 
 ## Suggested Implementation Order
 
+Historical order used for implementation:
+
 1. Add chain metadata and explorer URL generation.
 2. Add full tracked-wallet cache entries.
 3. Convert `NotificationPayload` from pre-rendered Markdown to structured data.
@@ -513,11 +526,12 @@ Received: 252.39 USDT (~$252) From: [0x09...1ed7](...)
 9. Update dispatcher to render and send MarkdownV2.
 10. Update roadmap checkboxes after tests pass.
 
-## Open Decisions Before Coding
+## Completion Notes
 
-- `MinimumTransactionValue` has been renamed to `MinimumUsdValue`; existing databases migrate through a column rename.
-- Which pricing provider to use for MVP.
-- Whether BNB Chain should display as `BNB`, `BSC`, or `BNB Chain` in the first line.
-- Whether the transaction link text should always be `Tx hash` or a shortened transaction hash.
-- Whether token metadata and price lookups should be disabled by configuration for local tests.
+- `MinimumTransactionValue` was renamed to `MinimumUsdValue`; existing databases migrate through a column rename.
+- MVP pricing uses CoinGecko for native assets and DexScreener for token assets.
+- BNB Chain currently displays as `BNB` in compact notifications.
+- Transaction links currently use `Tx hash` as the visible text.
+- Token metadata and price providers remain configurable/testable behind application abstractions.
+- Native transfer enrichment is deferred/disabled at runtime by product decision.
 

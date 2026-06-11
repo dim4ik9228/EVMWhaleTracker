@@ -48,7 +48,9 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
         };
 
         var amount = EscapeText(FormatAmount(payload.Amount));
-        var symbol = EscapeText(payload.AssetSymbol);
+        var symbol = string.IsNullOrWhiteSpace(payload.TokenContractAddress)
+            ? EscapeText(payload.AssetSymbol)
+            : Link(payload.AssetSymbol, chainMetadata.GetTokenUrl(payload.TokenContractAddress));
         var usdPart = payload.UsdValue.HasValue
             ? $" {EscapeText($"(~{FormatUsd(payload.UsdValue.Value)})")}"
             : string.Empty;
