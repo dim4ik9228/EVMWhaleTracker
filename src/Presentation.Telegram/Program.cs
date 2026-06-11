@@ -74,10 +74,8 @@ var httpRpcUrl = blockchainIndexerSection["HttpRpcUrl"];
 var webSocketRpcUrl = blockchainIndexerSection["WebSocketRpcUrl"];
 if (!string.IsNullOrWhiteSpace(httpRpcUrl) || !string.IsNullOrWhiteSpace(webSocketRpcUrl))
 {
-    builder.Services.AddSingleton<IBlockchainBlockSource, NethereumBlockchainBlockSource>();
     builder.Services.AddSingleton<ITokenMetadataProvider, NethereumTokenMetadataProvider>();
     builder.Services.AddHttpClient<IAssetPriceProvider, HttpAssetPriceProvider>();
-    builder.Services.AddHostedService<BlockchainIndexerWorker>();
     if (!string.IsNullOrWhiteSpace(webSocketRpcUrl))
     {
         builder.Services.AddHostedService<TokenTransferLogSubscriberWorker>();
