@@ -5,7 +5,6 @@ using Application.Messaging;
 using Infrastructure.Blockchain;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Nethereum.JsonRpc.WebSocketStreamingClient;
 using Nethereum.RPC.Eth.DTOs;
 using Nethereum.RPC.Reactive.Eth.Subscriptions;
@@ -18,35 +17,36 @@ namespace Infrastructure.Workers;
 public sealed class TokenTransferLogSubscriberWorker : BackgroundService
 {
     private static readonly TimeSpan EmptyWalletDelay = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan SubscriptionRefreshInterval = TimeSpan.FromMinutes(1);
 
     private readonly OnChainPipelineChannels _channels;
     private readonly ITrackedAddressCacheService _trackedAddressCache;
-    private readonly BlockchainIndexerOptions _options;
+    private readonly BlockchainNetworkOptions _network;
     private readonly ILogger<TokenTransferLogSubscriberWorker> _logger;
 
     public TokenTransferLogSubscriberWorker(
         OnChainPipelineChannels channels,
         ITrackedAddressCacheService trackedAddressCache,
-        IOptions<BlockchainIndexerOptions> options,
+        BlockchainNetworkOptions network,
         ILogger<TokenTransferLogSubscriberWorker> logger)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(trackedAddressCache);
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(network);
         ArgumentNullException.ThrowIfNull(logger);
 
         _channels = channels;
         _trackedAddressCache = trackedAddressCache;
-        _options = options.Value;
+        _network = network;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (string.IsNullOrWhiteSpace(_options.WebSocketRpcUrl))
+        if (string.IsNullOrWhiteSpace(_network.BuildWebSocketRpcUrl()))
         {
-            _logger.LogWarning("Token transfer log subscriber is disabled because BlockchainIndexer:WebSocketRpcUrl is not configured.");
+            _logger.LogWarning(
+                "Token transfer log subscriber for {Chain} is disabled because WebSocketRpcUrl is not configured.",
+                _network.Chain);
             return;
         }
 
@@ -69,8 +69,11 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Token transfer log websocket subscription dropped. Reconnecting after delay.");
-                await Task.Delay(_options.WebSocketReconnectDelay, stoppingToken);
+                _logger.LogWarning(
+                    ex,
+                    "Token transfer log websocket subscription dropped for {Chain}. Reconnecting after delay.",
+                    _network.Chain);
+                await Task.Delay(_network.WebSocketReconnectDelay, stoppingToken);
             }
         }
     }
@@ -89,7 +92,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
             return;
         }
 
-        using var client = new StreamingWebSocketClient(_options.WebSocketRpcUrl);
+        using var client = new StreamingWebSocketClient(_network.BuildWebSocketRpcUrl());
         var queue = Channel.CreateUnbounded<FilterLog>(new UnboundedChannelOptions
         {
             SingleReader = true,
@@ -122,12 +125,13 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
             }
 
             _logger.LogInformation(
-                "Subscribed to ERC-20 transfer logs for {TrackedAddressCount} tracked wallets using {FilterCount} websocket filters.",
+                "Subscribed to ERC-20 transfer logs on {Chain} for {TrackedAddressCount} tracked wallets using {FilterCount} websocket filters.",
+                _network.Chain,
                 trackedAddresses.Count,
                 filters.Count);
 
             using var refreshCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-            refreshCts.CancelAfter(SubscriptionRefreshInterval);
+            refreshCts.CancelAfter(_network.SubscriptionRefreshInterval);
 
             try
             {
@@ -148,7 +152,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
             }
             catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
             {
-                _logger.LogDebug("Refreshing ERC-20 transfer log subscriptions.");
+                _logger.LogDebug("Refreshing ERC-20 transfer log subscriptions for {Chain}.", _network.Chain);
             }
         }
         finally
@@ -166,7 +170,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "Ignoring token transfer log unsubscribe failure.");
+                    _logger.LogDebug(ex, "Ignoring token transfer log unsubscribe failure for {Chain}.", _network.Chain);
                 }
             }
 
@@ -176,7 +180,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Ignoring token transfer log websocket stop failure.");
+                _logger.LogDebug(ex, "Ignoring token transfer log websocket stop failure for {Chain}.", _network.Chain);
             }
         }
     }
@@ -186,7 +190,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
     /// </summary>
     private RawBlockData ToRawBlockData(FilterLog log)
         => new(
-            Chain: _options.Chain,
+            Chain: _network.Chain,
             BlockNumber: log.BlockNumber?.Value is { } blockNumber ? checked((ulong)blockNumber) : 0,
             BlockHash: log.BlockHash ?? string.Empty,
             BlockTimestampUtc: DateTimeOffset.UtcNow,

@@ -18,7 +18,7 @@ public sealed class StaticChainMetadataProvider : IChainMetadataProvider
             [SupportedChain.Rootstock] = new(SupportedChain.Rootstock, "Rootstock", "RBTC", "RBTC", 18, "https://rootstock.blockscout.com"),
             [SupportedChain.Optimism] = new(SupportedChain.Optimism, "Optimism", "OP", "ETH", 18, "https://optimistic.etherscan.io"),
             [SupportedChain.Celo] = new(SupportedChain.Celo, "Celo", "CELO", "CELO", 18, "https://celoscan.io"),
-            [SupportedChain.Arbitrum] = new(SupportedChain.Arbitrum, "Arbitrum", "Arb", "ETH", 18, "https://arbiscan.io"),
+            [SupportedChain.Arbitrum] = new(SupportedChain.Arbitrum, "Arbitrum", "Arbitrum", "ETH", 18, "https://arbiscan.io"),
             [SupportedChain.Base] = new(SupportedChain.Base, "Base", "Base", "ETH", 18, "https://basescan.org"),
             [SupportedChain.HyperEvm] = new(SupportedChain.HyperEvm, "HyperEVM", "HyperEVM", "HYPE", 18, "https://hyperscan.com")
         };

@@ -20,6 +20,16 @@ The generated `.env` is ignored by git and is used only for local development.
 
 Postgres data is stored in `.docker/postgres-data/`, so the database survives container recreation locally.
 
+RPC URLs are configured as API-key-free base URLs. Put the key in user secrets or `.env` separately:
+
+```env
+BLOCKCHAIN_RPC_API_KEY=your-provider-key
+BLOCKCHAIN_0_HTTP_RPC_URL=https://bsc-mainnet.infura.io/v3/
+BLOCKCHAIN_0_WEB_SOCKET_RPC_URL=wss://bsc-mainnet.infura.io/ws/v3/
+```
+
+The app appends `BLOCKCHAIN_RPC_API_KEY` at startup for every configured Infura network. For providers that need the key in the middle of the URL, use `{ApiKey}` or `{RpcApiKey}` in the URL.
+
 ## Documentation
 
 - AI/project context: `docs/ai/context.md`
@@ -39,7 +49,7 @@ Native chain transfers, such as BNB or ETH transfers, are not enabled in the cur
 When you want to inspect Infura load, set:
 
 ```env
-BLOCKCHAIN_ENABLE_RPC_DIAGNOSTICS=true
+BLOCKCHAIN_0_ENABLE_RPC_DIAGNOSTICS=true
 ```
 
 With diagnostics enabled, native block scanning logs each block's transaction count and load time when that path is enabled.

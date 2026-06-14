@@ -2,7 +2,6 @@ using Application.Abstractions;
 using Domain.Common;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Nethereum.JsonRpc.WebSocketClient;
 using Nethereum.Web3;
 
@@ -29,40 +28,48 @@ public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDi
         "TokenMetadata.Unavailable",
         "Token metadata could not be resolved.");
 
-    private readonly Web3 _web3;
+    private readonly IReadOnlyDictionary<SupportedChain, Web3> _web3ByChain;
     private readonly IMemoryCache _cache;
     private readonly ILogger<NethereumTokenMetadataProvider> _logger;
-    private readonly IDisposable? _ownedTransport;
-    private readonly SupportedChain _chain;
+    private readonly List<IDisposable> _ownedTransports = [];
 
     public NethereumTokenMetadataProvider(
-        IOptions<BlockchainIndexerOptions> options,
+        IReadOnlyList<BlockchainNetworkOptions> networks,
         IMemoryCache cache,
         ILogger<NethereumTokenMetadataProvider> logger)
     {
-        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(networks);
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(logger);
 
-        var settings = options.Value;
-        _chain = settings.Chain;
         _cache = cache;
         _logger = logger;
 
-        if (!string.IsNullOrWhiteSpace(settings.HttpRpcUrl))
+        var web3ByChain = new Dictionary<SupportedChain, Web3>();
+        foreach (var network in networks.Where(network => network.Enabled))
         {
-            _web3 = new Web3(settings.HttpRpcUrl);
+            var httpRpcUrl = network.BuildHttpRpcUrl();
+            if (!string.IsNullOrWhiteSpace(httpRpcUrl))
+            {
+                web3ByChain[network.Chain] = new Web3(httpRpcUrl);
+                continue;
+            }
+
+            var webSocketRpcUrl = network.BuildWebSocketRpcUrl();
+            if (!string.IsNullOrWhiteSpace(webSocketRpcUrl))
+            {
+                var requestClient = new WebSocketClient(webSocketRpcUrl);
+                _ownedTransports.Add(requestClient);
+                web3ByChain[network.Chain] = new Web3(requestClient);
+            }
         }
-        else if (!string.IsNullOrWhiteSpace(settings.WebSocketRpcUrl))
+
+        if (web3ByChain.Count == 0)
         {
-            var requestClient = new WebSocketClient(settings.WebSocketRpcUrl);
-            _ownedTransport = requestClient;
-            _web3 = new Web3(requestClient);
+            throw new InvalidOperationException("At least one blockchain network RPC endpoint must be configured for token metadata resolution.");
         }
-        else
-        {
-            throw new InvalidOperationException("Either HttpRpcUrl or WebSocketRpcUrl must be configured for token metadata resolution.");
-        }
+
+        _web3ByChain = web3ByChain;
     }
 
 
@@ -71,7 +78,7 @@ public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDi
         string tokenContractAddress,
         CancellationToken cancellationToken)
     {
-        if (chain != _chain)
+        if (!_web3ByChain.TryGetValue(chain, out var web3))
         {
             return Result<TokenMetadata>.Failure(MetadataUnavailable);
         }
@@ -89,7 +96,7 @@ public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDi
 
         try
         {
-            var contract = _web3.Eth.GetContract(Erc20MetadataAbi, tokenContractAddress);
+            var contract = web3.Eth.GetContract(Erc20MetadataAbi, tokenContractAddress);
             var symbolResult = await TryCallStringAsync(contract.GetFunction("symbol"), "TOKEN");
             var nameResult = await TryCallStringAsync(contract.GetFunction("name"), null);
             var decimalsResult = await TryCallByteAsync(contract.GetFunction("decimals"), 18);
@@ -126,7 +133,10 @@ public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDi
 
     public void Dispose()
     {
-        _ownedTransport?.Dispose();
+        foreach (var ownedTransport in _ownedTransports)
+        {
+            ownedTransport.Dispose();
+        }
     }
 
     private static async Task<MetadataCallResult<string?>> TryCallStringAsync(Nethereum.Contracts.Function function, string? fallback)

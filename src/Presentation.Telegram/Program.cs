@@ -35,6 +35,9 @@ builder.Services.AddSerilog((services, loggerConfiguration) =>
 builder.Services.Configure<BlockchainIndexerOptions>(
     builder.Configuration.GetSection("BlockchainIndexer"));
 
+builder.Services.Configure<BlockchainNetworksOptions>(
+    builder.Configuration.GetSection("BlockchainNetworks"));
+
 builder.Services.Configure<AssetPriceOptions>(
     builder.Configuration.GetSection("AssetPrices"));
 
@@ -69,28 +72,32 @@ builder.Services.AddScoped<ITelegramCommandProcessor, TelegramCommandProcessor>(
 builder.Services.AddSingleton<ITelegramNotificationRenderer, TelegramNotificationRenderer>();
 builder.Services.AddHostedService<TrackedWalletCacheHydrationService>();
 
-var blockchainIndexerSection = builder.Configuration.GetSection("BlockchainIndexer");
-var httpRpcUrl = blockchainIndexerSection["HttpRpcUrl"];
-var webSocketRpcUrl = blockchainIndexerSection["WebSocketRpcUrl"];
-if (!string.IsNullOrWhiteSpace(httpRpcUrl) || !string.IsNullOrWhiteSpace(webSocketRpcUrl))
+var enabledBlockchainNetworks = BlockchainNetworkOptionsResolver.Resolve(builder.Configuration);
+builder.Services.AddSingleton<IReadOnlyList<BlockchainNetworkOptions>>(enabledBlockchainNetworks);
+
+if (enabledBlockchainNetworks.Count > 0)
 {
     builder.Services.AddSingleton<ITokenMetadataProvider, NethereumTokenMetadataProvider>();
     builder.Services.AddHttpClient<IAssetPriceProvider, HttpAssetPriceProvider>();
-    if (!string.IsNullOrWhiteSpace(webSocketRpcUrl))
+
+    foreach (var network in enabledBlockchainNetworks)
     {
-        builder.Services.AddHostedService<TokenTransferLogSubscriberWorker>();
-    }
-    else
-    {
-        Console.WriteLine("BlockchainIndexer:WebSocketRpcUrl is not configured. Token transfer log subscriber is disabled.");
+        builder.Services.AddSingleton<IHostedService>(sp =>
+            new TokenTransferLogSubscriberWorker(
+                sp.GetRequiredService<OnChainPipelineChannels>(),
+                sp.GetRequiredService<ITrackedAddressCacheService>(),
+                network,
+                sp.GetRequiredService<ILogger<TokenTransferLogSubscriberWorker>>()));
     }
 
     builder.Services.AddHostedService<WalletTrackerWorker>();
     builder.Services.AddHostedService<NotificationAggregationWorker>();
+
+    Console.WriteLine($"Enabled blockchain networks: {string.Join(", ", enabledBlockchainNetworks.Select(network => network.Chain))}");
 }
 else
 {
-    Console.WriteLine("Neither BlockchainIndexer:HttpRpcUrl nor BlockchainIndexer:WebSocketRpcUrl is configured. Blockchain workers are disabled.");
+    Console.WriteLine("No blockchain networks are configured. Blockchain workers are disabled.");
 }
 
 var telegramSection = builder.Configuration.GetSection("TelegramBot");
