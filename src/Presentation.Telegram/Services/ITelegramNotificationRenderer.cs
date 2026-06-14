@@ -9,6 +9,8 @@ namespace Presentation.Telegram.Services;
 public interface ITelegramNotificationRenderer
 {
     TelegramRenderedMessage Render(NotificationPayload payload);
+
+    TelegramRenderedMessage Render(AggregatedNotificationPayload payload);
 }
 
 /// <summary>

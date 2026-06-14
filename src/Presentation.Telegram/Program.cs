@@ -86,6 +86,7 @@ if (!string.IsNullOrWhiteSpace(httpRpcUrl) || !string.IsNullOrWhiteSpace(webSock
     }
 
     builder.Services.AddHostedService<WalletTrackerWorker>();
+    builder.Services.AddHostedService<NotificationAggregationWorker>();
 }
 else
 {

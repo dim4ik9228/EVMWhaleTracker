@@ -42,7 +42,7 @@ public sealed class WalletTrackerWorkerTests
 
         Assert.Equal(7777, notification.TelegramUserId);
         Assert.Equal("0xtx-to", notification.TransactionHash);
-        Assert.Equal(TrackedAddress, notification.WalletAddress);
+        Assert.Equal(TrackedAddress, notification.TrackedWalletAddress);
         Assert.Equal(NotificationOperation.Received, notification.Operation);
         Assert.Equal(2.5m, notification.Amount);
         Assert.Equal(5m, notification.UsdValue);
@@ -80,7 +80,7 @@ public sealed class WalletTrackerWorkerTests
 
         Assert.Equal(7777, notification.TelegramUserId);
         Assert.Equal("0xtx-from", notification.TransactionHash);
-        Assert.Equal(TrackedAddress, notification.WalletAddress);
+        Assert.Equal(TrackedAddress, notification.TrackedWalletAddress);
         Assert.Equal(NotificationOperation.Sent, notification.Operation);
         Assert.Equal("0x2222222222222222222222222222222222222222", notification.CounterpartyAddress);
 
@@ -256,7 +256,7 @@ public sealed class WalletTrackerWorkerTests
 
         Assert.Equal("0xtoken-self", notification.TransactionHash);
         Assert.Equal(NotificationOperation.SelfTransfer, notification.Operation);
-        Assert.Equal(TrackedAddress, notification.WalletAddress);
+        Assert.Equal(TrackedAddress, notification.TrackedWalletAddress);
         Assert.Equal(TrackedAddress, notification.CounterpartyAddress);
         Assert.False(await fixture.TryReadNotificationAsync(TimeSpan.FromMilliseconds(250)));
 

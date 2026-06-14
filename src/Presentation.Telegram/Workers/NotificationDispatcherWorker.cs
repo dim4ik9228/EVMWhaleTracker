@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Presentation.Telegram.Services;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
+using Telegram.Bot.Types;
 using System.Collections.Concurrent;
 
 namespace Presentation.Telegram.Workers;
@@ -42,7 +43,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var payload in _channels.NotificationPayloadChannel.Reader.ReadAllAsync(stoppingToken))
+        await foreach (var payload in _channels.AggregatedNotificationPayloadChannel.Reader.ReadAllAsync(stoppingToken))
         {
             if (payload.TelegramUserId <= 0)
             {
@@ -62,9 +63,9 @@ public sealed class NotificationDispatcherWorker : BackgroundService
                 if (sent)
                 {
                     _logger.LogInformation(
-                        "Sent Telegram notification to chat {ChatId} for wallet {WalletAddress} and transaction {TransactionHash}.",
+                        "Sent Telegram notification to chat {ChatId} for wallet {TrackedWalletAddress} and transaction {TransactionHash}.",
                         payload.TelegramUserId,
-                        payload.WalletAddress,
+                        payload.TrackedWalletAddress,
                         payload.TransactionHash);
                 }
             }
@@ -92,7 +93,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
     }
 
     private Task<bool> SendWithRetryAsync(
-        NotificationPayload payload,
+        AggregatedNotificationPayload payload,
         TelegramRenderedMessage renderedMessage,
         CancellationToken cancellationToken)
         => _sendRetryPolicy.SendAsync(
@@ -104,6 +105,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
                     chatId: payload.TelegramUserId,
                     text: renderedMessage.Text,
                     parseMode: renderedMessage.ParseMode,
+                    linkPreviewOptions: new LinkPreviewOptions { IsDisabled = true },
                     cancellationToken: ct);
             },
             _logger,

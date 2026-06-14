@@ -12,12 +12,17 @@ namespace Presentation.Telegram.Services;
 public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMetadataProvider)
     : ITelegramNotificationRenderer
 {
+    private const int MaxRenderedTransferLines = 10;
+
     private static readonly HashSet<char> MarkdownV2ReservedCharacters =
     [
         '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
     ];
 
     public TelegramRenderedMessage Render(NotificationPayload payload)
+        => Render(AggregatedNotificationPayload.FromSingle(payload));
+
+    public TelegramRenderedMessage Render(AggregatedNotificationPayload payload)
     {
         ArgumentNullException.ThrowIfNull(payload);
 
@@ -30,16 +35,37 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
             trackedWalletText,
             chainMetadata.GetAddressUrl(payload.TrackedWalletAddress));
 
-        var counterpartyText = string.IsNullOrWhiteSpace(payload.CounterpartyAlias)
-            ? ShortAddress(payload.CounterpartyAddress)
-            : payload.CounterpartyAlias;
+        var transactionLink = Link("Tx hash", chainMetadata.GetTransactionUrl(payload.TransactionHash));
+        var lines = payload.Lines
+            .Take(MaxRenderedTransferLines)
+            .Select(line => RenderLine(line, chainMetadata))
+            .ToList();
 
-        var counterparty = string.IsNullOrWhiteSpace(payload.CounterpartyAddress)
+        if (payload.Lines.Count > MaxRenderedTransferLines)
+        {
+            lines.Add(EscapeText($"...and {payload.Lines.Count - MaxRenderedTransferLines} more transfers"));
+        }
+
+        var text =
+            $"{trackedWalletLink} \\| {EscapeText(chainMetadata.ShortName)}\n" +
+            $"{string.Join('\n', lines)}\n" +
+            transactionLink;
+
+        return new TelegramRenderedMessage(text, ParseMode.MarkdownV2);
+    }
+
+    private static string RenderLine(NotificationTransferLine line, ChainMetadata chainMetadata)
+    {
+        var counterpartyText = string.IsNullOrWhiteSpace(line.CounterpartyAlias)
+            ? ShortAddress(line.CounterpartyAddress)
+            : line.CounterpartyAlias;
+
+        var counterparty = string.IsNullOrWhiteSpace(line.CounterpartyAddress)
             ? EscapeText("unknown")
-            : Link(counterpartyText, chainMetadata.GetAddressUrl(payload.CounterpartyAddress));
+            : Link(counterpartyText, chainMetadata.GetAddressUrl(line.CounterpartyAddress));
 
-        var counterpartyRole = payload.Operation == NotificationOperation.Received ? "From" : "To";
-        var operationText = payload.Operation switch
+        var counterpartyRole = line.Operation == NotificationOperation.Received ? "From" : "To";
+        var operationText = line.Operation switch
         {
             NotificationOperation.Received => "Received",
             NotificationOperation.Sent => "Sent",
@@ -47,22 +73,15 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
             _ => "Activity"
         };
 
-        var amount = EscapeText(FormatAmount(payload.Amount));
-        var symbol = string.IsNullOrWhiteSpace(payload.TokenContractAddress)
-            ? EscapeText(payload.AssetSymbol)
-            : Link(payload.AssetSymbol, chainMetadata.GetTokenUrl(payload.TokenContractAddress));
-        var usdPart = payload.UsdValue.HasValue
-            ? $" {EscapeText($"(~{FormatUsd(payload.UsdValue.Value)})")}"
+        var amount = EscapeText(FormatAmount(line.Amount));
+        var symbol = string.IsNullOrWhiteSpace(line.TokenContractAddress)
+            ? EscapeText(line.AssetSymbol)
+            : Link(line.AssetSymbol, chainMetadata.GetTokenUrl(line.TokenContractAddress));
+        var usdPart = line.UsdValue.HasValue
+            ? $" {EscapeText($"(~{FormatUsd(line.UsdValue.Value)})")}"
             : string.Empty;
 
-        var transactionLink = Link("Tx hash", chainMetadata.GetTransactionUrl(payload.TransactionHash));
-
-        var text =
-            $"{trackedWalletLink} \\| {EscapeText(chainMetadata.ShortName)}\n" +
-            $"{EscapeText(operationText)}: {amount} {symbol}{usdPart} {EscapeText(counterpartyRole)}: {counterparty}\n" +
-            transactionLink;
-
-        return new TelegramRenderedMessage(text, ParseMode.MarkdownV2);
+        return $"{EscapeText(operationText)}: {amount} {symbol}{usdPart} {EscapeText(counterpartyRole)}: {counterparty}";
     }
 
     private static string Link(string visibleText, string url)

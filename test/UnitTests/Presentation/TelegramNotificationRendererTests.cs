@@ -63,4 +63,45 @@ public sealed class TelegramNotificationRendererTests
         Assert.Contains("1\\.25 BNB", rendered.Text);
         Assert.DoesNotContain("/token/", rendered.Text);
     }
+
+    [Fact]
+    public void Render_RendersMultipleTransferLinesForAggregatedNotification()
+    {
+        var renderer = new TelegramNotificationRenderer(new StaticChainMetadataProvider());
+        var payload = new AggregatedNotificationPayload(
+            TelegramUserId: 7777,
+            Chain: SupportedChain.Bsc,
+            TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",
+            TrackedWalletAlias: "debabki.eth",
+            TransactionHash: "0xswap",
+            BlockNumber: 100,
+            BlockTimestampUtc: DateTimeOffset.UtcNow,
+            Lines:
+            [
+                new NotificationTransferLine(
+                    Operation: NotificationOperation.Received,
+                    CounterpartyAddress: "0x1111111111111111111111111111111111111111",
+                    CounterpartyAlias: null,
+                    AssetSymbol: "ESPORTS",
+                    AssetName: "Esports",
+                    TokenContractAddress: "0x2222222222222222222222222222222222222222",
+                    Amount: 62877m,
+                    UsdValue: 2876m),
+                new NotificationTransferLine(
+                    Operation: NotificationOperation.Sent,
+                    CounterpartyAddress: "0x3333333333333333333333333333333333333333",
+                    CounterpartyAlias: "Dex Router (OKX)",
+                    AssetSymbol: "USDT",
+                    AssetName: "Tether USD",
+                    TokenContractAddress: "0x55d398326f99059fF775485246999027B3197955",
+                    Amount: 2758m,
+                    UsdValue: 2754m)
+            ]);
+
+        var rendered = renderer.Render(payload);
+
+        Assert.Contains("Received: 62877 [ESPORTS](https://bscscan.com/token/0x2222222222222222222222222222222222222222) \\(\\~$2876\\) From: [0x1111\\.\\.\\.1111](https://bscscan.com/address/0x1111111111111111111111111111111111111111)", rendered.Text);
+        Assert.Contains("Sent: 2758 [USDT](https://bscscan.com/token/0x55d398326f99059fF775485246999027B3197955) \\(\\~$2754\\) To: [Dex Router \\(OKX\\)](https://bscscan.com/address/0x3333333333333333333333333333333333333333)", rendered.Text);
+        Assert.Contains("[Tx hash](https://bscscan.com/tx/0xswap)", rendered.Text);
+    }
 }

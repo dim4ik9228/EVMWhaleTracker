@@ -457,6 +457,7 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [x] End-to-end MVP flow validated on a live chain
 - [ ] Support multiple chains simultaneously
 - [x] Redesign Telegram notifications to match a drops-style bot message layout
+- [x] Transaction-level notification aggregation for multi-transfer DeFi activity
 - [ ] Auto-detected wallet labels from chain scans
 - [x] Transaction explorer links in notifications
 - [ ] Inline notification edit menu for alias, minimum value, and chain preferences
@@ -485,3 +486,27 @@ Recommended tests:
 - Minimum value updates persist and affect matching.
 - Chain preference updates persist and affect matching.
 - Invalid edits return a friendly error and leave the old settings intact.
+
+## Phase 13: Address Label Enrichment
+
+Goal: show known counterparty names, such as exchange hot-wallet labels, instead of raw shortened addresses when reliable labels are available.
+
+Tasks:
+
+- Add an `IAddressLabelProvider` abstraction behind the notification enrichment flow.
+- Resolve labels in this order:
+  - user-configured/manual wallet alias
+  - local static known-address label catalog
+  - optional explorer or intelligence provider later
+  - shortened address fallback
+- Start with a small static label catalog for high-confidence exchange and bridge addresses.
+- Cache external label lookups if an explorer/intelligence provider is added later.
+- Keep labels chain-specific because the same address can mean different things across chains.
+- Render labeled counterparties as linked text, for example `From: [MEXC 3](https://bscscan.com/address/...)`.
+
+Recommended tests:
+
+- Manual aliases win over auto-detected labels.
+- Static labels render instead of shortened addresses.
+- Unknown counterparties still fall back to shortened linked addresses.
+- Labels are isolated by chain.

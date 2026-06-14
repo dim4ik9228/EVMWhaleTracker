@@ -9,7 +9,8 @@ public sealed class OnChainPipelineChannels
 {
     public OnChainPipelineChannels(
         int rawBlockBufferCapacity = 512,
-        int notificationBufferCapacity = 512)
+        int notificationBufferCapacity = 512,
+        int aggregatedNotificationBufferCapacity = 512)
     {
         RawBlockDataChannel = Channel.CreateBounded<RawBlockData>(new BoundedChannelOptions(rawBlockBufferCapacity)
         {
@@ -20,6 +21,14 @@ public sealed class OnChainPipelineChannels
         });
 
         NotificationPayloadChannel = Channel.CreateBounded<NotificationPayload>(new BoundedChannelOptions(notificationBufferCapacity)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = false,
+            SingleWriter = false,
+            AllowSynchronousContinuations = false
+        });
+
+        AggregatedNotificationPayloadChannel = Channel.CreateBounded<AggregatedNotificationPayload>(new BoundedChannelOptions(aggregatedNotificationBufferCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
             SingleReader = false,
@@ -37,4 +46,9 @@ public sealed class OnChainPipelineChannels
     /// Carries structured notifications from matching workers to Telegram delivery.
     /// </summary>
     public Channel<NotificationPayload> NotificationPayloadChannel { get; }
+
+    /// <summary>
+    /// Carries transaction-level notification batches to Telegram delivery.
+    /// </summary>
+    public Channel<AggregatedNotificationPayload> AggregatedNotificationPayloadChannel { get; }
 }
