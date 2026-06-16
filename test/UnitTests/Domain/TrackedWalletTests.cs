@@ -76,21 +76,21 @@ public sealed class TrackedWalletTests
     }
 
     [Fact]
-    public void UpdateTrackingConfiguration_ChangesSettingsAndSetsUpdatedTimestamp()
+    public void FocusedUpdateMethods_ChangeSettingsAndSetUpdatedTimestamp()
     {
         var createResult = TrackedWallet.Create(ChecksummedAddress, userId: 12345);
         Assert.True(createResult.IsSuccess);
 
         var wallet = createResult.Value;
-        var updateResult = wallet.UpdateTrackingConfiguration(
-            minimumUsdValue: 10m,
+
+        Assert.True(wallet.UpdateMinimumUsdValue(10m).IsSuccess);
+        Assert.True(wallet.UpdateAlias("Treasury").IsSuccess);
+        Assert.True(wallet.UpdateTransferTracking(
             trackIncomingTransfers: false,
             trackOutgoingTransfers: true,
-            trackTokenTransfers: false,
-            alias: "Treasury",
-            enabledChains: [SupportedChain.Ethereum, SupportedChain.Base]);
+            trackTokenTransfers: false).IsSuccess);
+        Assert.True(wallet.UpdateEnabledChains([SupportedChain.Ethereum, SupportedChain.Base]).IsSuccess);
 
-        Assert.True(updateResult.IsSuccess);
         Assert.Equal(10m, wallet.MinimumUsdValue);
         Assert.Equal("Treasury", wallet.Alias);
         Assert.False(wallet.TrackIncomingTransfers);
@@ -101,24 +101,69 @@ public sealed class TrackedWalletTests
     }
 
     [Fact]
-    public void UpdateTrackingConfiguration_WithNegativeValue_FailsAndKeepsExistingSettings()
+    public void UpdateMinimumUsdValue_WithNegativeValue_FailsAndKeepsExistingSettings()
     {
         var createResult = TrackedWallet.Create(ChecksummedAddress, userId: 12345, minimumUsdValue: 2m);
         Assert.True(createResult.IsSuccess);
 
         var wallet = createResult.Value;
-        var updateResult = wallet.UpdateTrackingConfiguration(
-            minimumUsdValue: -1m,
-            trackIncomingTransfers: false,
-            trackOutgoingTransfers: false,
-            trackTokenTransfers: false);
+        var updateResult = wallet.UpdateMinimumUsdValue(-1m);
 
         Assert.True(updateResult.IsFailure);
         Assert.Equal(Errors.TrackedWallet.MinimumUsdValueMustBeNonNegative, updateResult.Error);
         Assert.Equal(2m, wallet.MinimumUsdValue);
-        Assert.True(wallet.TrackIncomingTransfers);
-        Assert.True(wallet.TrackOutgoingTransfers);
-        Assert.True(wallet.TrackTokenTransfers);
+        Assert.Null(wallet.UpdatedAtUtc);
+    }
+
+    [Fact]
+    public void SetChainTracking_DisablesChainFromAllChainsByExpandingExplicitChains()
+    {
+        var createResult = TrackedWallet.Create(ChecksummedAddress, userId: 12345);
+        Assert.True(createResult.IsSuccess);
+
+        var wallet = createResult.Value;
+        var updateResult = wallet.SetChainTracking(SupportedChain.Base, enabled: false);
+
+        Assert.True(updateResult.IsSuccess);
+        Assert.NotEmpty(wallet.EnabledChains);
+        Assert.DoesNotContain(SupportedChain.Base, wallet.EnabledChains);
+        Assert.Contains(SupportedChain.Bsc, wallet.EnabledChains);
+        Assert.Contains(SupportedChain.Ethereum, wallet.EnabledChains);
+        Assert.NotNull(wallet.UpdatedAtUtc);
+    }
+
+    [Fact]
+    public void SetChainTracking_EnablesChainAndCollapsesToAllChains()
+    {
+        var createResult = TrackedWallet.Create(
+            ChecksummedAddress,
+            userId: 12345,
+            enabledChains: Enum.GetValues<SupportedChain>().Where(chain => chain != SupportedChain.Base));
+        Assert.True(createResult.IsSuccess);
+
+        var wallet = createResult.Value;
+        var updateResult = wallet.SetChainTracking(SupportedChain.Base, enabled: true);
+
+        Assert.True(updateResult.IsSuccess);
+        Assert.Empty(wallet.EnabledChains);
+        Assert.NotNull(wallet.UpdatedAtUtc);
+    }
+
+    [Fact]
+    public void SetChainTracking_DisablingLastExplicitChain_Fails()
+    {
+        var createResult = TrackedWallet.Create(
+            ChecksummedAddress,
+            userId: 12345,
+            enabledChains: [SupportedChain.Base]);
+        Assert.True(createResult.IsSuccess);
+
+        var wallet = createResult.Value;
+        var updateResult = wallet.SetChainTracking(SupportedChain.Base, enabled: false);
+
+        Assert.True(updateResult.IsFailure);
+        Assert.Equal(Errors.TrackedWallet.AtLeastOneEnabledChainRequired, updateResult.Error);
+        Assert.Equal([SupportedChain.Base], wallet.EnabledChains);
         Assert.Null(wallet.UpdatedAtUtc);
     }
 

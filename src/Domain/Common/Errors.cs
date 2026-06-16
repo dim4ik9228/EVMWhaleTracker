@@ -43,6 +43,10 @@ public static class Errors
             "TrackedWallet.Alias",
             "Tracked wallet aliases must be 100 characters or fewer.");
 
+        public static readonly Error AtLeastOneEnabledChainRequired = Error.Validation(
+            "TrackedWallet.EnabledChains",
+            "At least one chain must remain enabled.");
+
         public static readonly Error AlreadyTracked = Error.Validation(
             "TrackedWallet.AlreadyTracked",
             "This Telegram user already tracks the specified address.");

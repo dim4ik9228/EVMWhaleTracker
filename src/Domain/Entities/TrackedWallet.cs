@@ -162,44 +162,89 @@ public sealed class TrackedWallet
     }
 
     /// <summary>
-    /// Updates alert settings while preserving existing alias and chain restrictions when those values are omitted.
+    /// Updates the minimum USD threshold required before a wallet activity can notify.
     /// </summary>
-    public Result UpdateTrackingConfiguration(
-        decimal minimumUsdValue,
-        bool trackIncomingTransfers,
-        bool trackOutgoingTransfers,
-        bool trackTokenTransfers,
-        string? alias = null,
-        IEnumerable<SupportedChain>? enabledChains = null)
+    public Result UpdateMinimumUsdValue(decimal minimumUsdValue)
     {
         if (minimumUsdValue < 0m)
         {
             return Result.Failure(Errors.TrackedWallet.MinimumUsdValueMustBeNonNegative);
         }
 
+        MinimumUsdValue = minimumUsdValue;
+        Touch();
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Updates the user-facing wallet alias. Null or whitespace clears the alias.
+    /// </summary>
+    public Result UpdateAlias(string? alias)
+    {
         var aliasResult = NormalizeAlias(alias);
         if (aliasResult.IsFailure)
         {
             return Result.Failure(aliasResult.Error);
         }
 
-        MinimumUsdValue = minimumUsdValue;
+        Alias = aliasResult.Value;
+        Touch();
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Updates direction and token-transfer tracking flags.
+    /// </summary>
+    public Result UpdateTransferTracking(
+        bool trackIncomingTransfers,
+        bool trackOutgoingTransfers,
+        bool trackTokenTransfers)
+    {
         TrackIncomingTransfers = trackIncomingTransfers;
         TrackOutgoingTransfers = trackOutgoingTransfers;
         TrackTokenTransfers = trackTokenTransfers;
+        Touch();
+        return Result.Success();
+    }
 
-        if (alias is not null)
+    /// <summary>
+    /// Replaces the explicit chain allow-list. An empty collection means all supported chains.
+    /// </summary>
+    public Result UpdateEnabledChains(IEnumerable<SupportedChain> enabledChains)
+    {
+        _enabledChainsJson = SerializeEnabledChains(enabledChains);
+        Touch();
+        return Result.Success();
+    }
+
+    /// <summary>
+    /// Enables or disables a single chain while preserving the empty-list-as-all-chains storage convention.
+    /// </summary>
+    public Result SetChainTracking(SupportedChain chain, bool enabled)
+    {
+        var allSupportedChains = Enum.GetValues<SupportedChain>();
+        var enabledChains = EnabledChains.Count == 0
+            ? allSupportedChains.ToHashSet()
+            : EnabledChains.ToHashSet();
+
+        if (enabled)
         {
-            Alias = aliasResult.Value;
+            enabledChains.Add(chain);
+        }
+        else
+        {
+            enabledChains.Remove(chain);
         }
 
-        if (enabledChains is not null)
+        if (enabledChains.Count == 0)
         {
-            _enabledChainsJson = SerializeEnabledChains(enabledChains);
+            return Result.Failure(Errors.TrackedWallet.AtLeastOneEnabledChainRequired);
         }
 
-        UpdatedAtUtc = DateTimeOffset.UtcNow;
-
+        _enabledChainsJson = enabledChains.Count == allSupportedChains.Length
+            ? SerializeEnabledChains([])
+            : SerializeEnabledChains(enabledChains);
+        Touch();
         return Result.Success();
     }
 
@@ -226,7 +271,7 @@ public sealed class TrackedWallet
             return [];
         }
 
-        return enabledChains.Distinct().ToList();
+        return enabledChains.Distinct().OrderBy(chain => (int)chain).ToList();
     }
 
     private static string SerializeEnabledChains(IEnumerable<SupportedChain>? enabledChains)
@@ -240,5 +285,10 @@ public sealed class TrackedWallet
         }
 
         return JsonSerializer.Deserialize<List<SupportedChain>>(enabledChainsJson, (JsonSerializerOptions?)null) ?? [];
+    }
+
+    private void Touch()
+    {
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
     }
 }

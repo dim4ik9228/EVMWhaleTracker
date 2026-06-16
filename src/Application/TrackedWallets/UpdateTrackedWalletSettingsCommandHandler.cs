@@ -33,17 +33,37 @@ public sealed class UpdateTrackedWalletSettingsCommandHandler(
             return Result<TrackedWalletDetails>.Failure(Errors.TrackedWallet.NotFound);
         }
 
-        var updateResult = trackedWallet.UpdateTrackingConfiguration(
-            request.MinimumUsdValue,
+        var minimumUsdValueResult = trackedWallet.UpdateMinimumUsdValue(request.MinimumUsdValue);
+        if (minimumUsdValueResult.IsFailure)
+        {
+            return Result<TrackedWalletDetails>.Failure(minimumUsdValueResult.Error);
+        }
+
+        var transferTrackingResult = trackedWallet.UpdateTransferTracking(
             request.TrackIncomingTransfers,
             request.TrackOutgoingTransfers,
-            request.TrackTokenTransfers,
-            request.Alias,
-            request.EnabledChains);
-
-        if (updateResult.IsFailure)
+            request.TrackTokenTransfers);
+        if (transferTrackingResult.IsFailure)
         {
-            return Result<TrackedWalletDetails>.Failure(updateResult.Error);
+            return Result<TrackedWalletDetails>.Failure(transferTrackingResult.Error);
+        }
+
+        if (request.Alias is not null)
+        {
+            var aliasResult = trackedWallet.UpdateAlias(request.Alias);
+            if (aliasResult.IsFailure)
+            {
+                return Result<TrackedWalletDetails>.Failure(aliasResult.Error);
+            }
+        }
+
+        if (request.EnabledChains is not null)
+        {
+            var enabledChainsResult = trackedWallet.UpdateEnabledChains(request.EnabledChains);
+            if (enabledChainsResult.IsFailure)
+            {
+                return Result<TrackedWalletDetails>.Failure(enabledChainsResult.Error);
+            }
         }
 
         await trackedWalletRepository.SaveChangesAsync(cancellationToken);
