@@ -2,6 +2,7 @@ using Application.Messaging;
 using Application.Abstractions;
 using Infrastructure.Caching;
 using Infrastructure.Blockchain;
+using Infrastructure.Ens;
 using Infrastructure.Persistence;
 using Infrastructure.Pricing;
 using Infrastructure.Workers;
@@ -44,6 +45,9 @@ builder.Services.Configure<AssetPriceOptions>(
 builder.Services.Configure<TelegramBotOptions>(
     builder.Configuration.GetSection("TelegramBot"));
 
+builder.Services.Configure<EnsReverseLookupOptions>(
+    builder.Configuration.GetSection("EnsReverseLookup"));
+
 var connectionString = builder.Configuration["ConnectionStrings:Default"];
 if (string.IsNullOrWhiteSpace(connectionString))
 {
@@ -72,6 +76,7 @@ builder.Services.AddSingleton<ITrackedAddressCacheService>(sp => sp.GetRequiredS
 builder.Services.AddSingleton<ITrackedWalletCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
 builder.Services.AddSingleton<IAddressLabelCacheService>(sp => sp.GetRequiredService<InMemoryAddressLabelCacheService>());
 builder.Services.AddSingleton<IAddressLabelResolver, AddressLabelResolver>();
+builder.Services.AddHttpClient<IEnsReverseLookupProvider, EthereumEnsReverseLookupProvider>();
 builder.Services.AddSingleton<IPendingWalletAliasRequestStore, InMemoryPendingWalletAliasRequestStore>();
 builder.Services.AddScoped<ITelegramCommandProcessor, TelegramCommandProcessor>();
 builder.Services.AddSingleton<ITelegramNotificationRenderer, TelegramNotificationRenderer>();

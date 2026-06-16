@@ -58,7 +58,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
             {
                 await chatLimiter.WaitAsync(stoppingToken);
                 chatLimiterAcquired = true;
-                var renderedMessage = _notificationRenderer.Render(payload);
+                var renderedMessage = await _notificationRenderer.RenderAsync(payload, stoppingToken);
                 var sent = await SendWithRetryAsync(payload, renderedMessage, stoppingToken);
                 if (sent)
                 {

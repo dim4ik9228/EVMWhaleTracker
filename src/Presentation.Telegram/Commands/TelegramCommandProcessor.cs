@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using Application.Abstractions;
 using Application.TrackedWallets;
 using Domain.Common;
 using Domain.ValueObjects;
@@ -12,7 +13,8 @@ namespace Presentation.Telegram.Commands;
 /// </summary>
 public sealed class TelegramCommandProcessor(
     ISender sender,
-    IPendingWalletAliasRequestStore pendingAliasRequests)
+    IPendingWalletAliasRequestStore pendingAliasRequests,
+    IEnsReverseLookupProvider ensReverseLookupProvider)
     : ITelegramCommandProcessor
 {
     private const string AliasPrompt = "Please give a name to this wallet";
@@ -22,13 +24,13 @@ public sealed class TelegramCommandProcessor(
         Welcome to EVMWhaleTracker.
 
         Available commands:
-        <code>/add &lt;address&gt; &lt;name&gt;</code>
+        <code>/add &lt;address&gt; [name]</code>
         <code>/list</code>
         <code>/remove &lt;address&gt;</code>
 
         Examples:
         <code>/add 0x52908400098527886E0F7030069857D2E4169EE7 Main Address</code>
-        <code>/add 0x52908400098527886e0f7030069857d2e4169ee7 Binance Deposit</code>
+        <code>/add 0x52908400098527886e0f7030069857d2e4169ee7</code>
         <code>/remove 0x52908400098527886E0F7030069857D2E4169EE7</code>
         """;
 
@@ -86,6 +88,12 @@ public sealed class TelegramCommandProcessor(
             if (addressResult.IsFailure)
             {
                 return new TelegramCommandResponse(FormatError(addressResult.Error));
+            }
+
+            var ensAlias = await ensReverseLookupProvider.ResolveNameAsync(addressResult.Value, cancellationToken);
+            if (!string.IsNullOrWhiteSpace(ensAlias))
+            {
+                return await AddWalletAsync(telegramUserId, rawAddress, ensAlias, cancellationToken);
             }
 
             pendingAliasRequests.Set(telegramUserId, new PendingWalletAliasRequest(rawAddress));
@@ -253,7 +261,7 @@ public sealed class TelegramCommandProcessor(
 
         if (string.IsNullOrWhiteSpace(arguments))
         {
-            errorText = "Usage: /add &lt;address&gt; &lt;name&gt;";
+            errorText = "Usage: /add &lt;address&gt; [name]";
             return false;
         }
 

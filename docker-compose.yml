@@ -50,4 +50,6 @@ services:
       BlockchainNetworks__Networks__3__Enabled: ${BLOCKCHAIN_3_ENABLED:-false}
       BlockchainNetworks__Networks__3__HttpRpcUrl: ${BLOCKCHAIN_3_HTTP_RPC_URL:-}
       BlockchainNetworks__Networks__3__WebSocketRpcUrl: ${BLOCKCHAIN_3_WEB_SOCKET_RPC_URL:-}
+      EnsReverseLookup__Enabled: ${ENS_REVERSE_LOOKUP_ENABLED:-true}
+      EnsReverseLookup__Timeout: ${ENS_REVERSE_LOOKUP_TIMEOUT:-00:00:02}
     restart: unless-stopped

@@ -8,9 +8,9 @@ namespace Presentation.Telegram.Services;
 /// </summary>
 public interface ITelegramNotificationRenderer
 {
-    TelegramRenderedMessage Render(NotificationPayload payload);
+    Task<TelegramRenderedMessage> RenderAsync(NotificationPayload payload, CancellationToken cancellationToken);
 
-    TelegramRenderedMessage Render(AggregatedNotificationPayload payload);
+    Task<TelegramRenderedMessage> RenderAsync(AggregatedNotificationPayload payload, CancellationToken cancellationToken);
 }
 
 /// <summary>

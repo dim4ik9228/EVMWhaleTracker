@@ -13,7 +13,7 @@ namespace UnitTests.Presentation;
 public sealed class TelegramNotificationRendererTests
 {
     [Fact]
-    public void Render_EscapesMarkdownV2_AndUsesCompactLinkedLayout()
+    public async Task RenderAsync_EscapesMarkdownV2_AndUsesCompactLinkedLayout()
     {
         var renderer = CreateRenderer();
         var payload = new NotificationPayload(
@@ -33,7 +33,7 @@ public sealed class TelegramNotificationRendererTests
             BlockNumber: 100,
             BlockTimestampUtc: DateTimeOffset.UtcNow);
 
-        var rendered = renderer.Render(payload);
+        var rendered = await renderer.RenderAsync(payload, CancellationToken.None);
 
         Assert.Equal(ParseMode.MarkdownV2, rendered.ParseMode);
         Assert.Contains("[debabki\\.eth](https://bscscan.com/address/0x52908400098527886E0F7030069857D2E4169EE7) \\| BNB", rendered.Text);
@@ -42,7 +42,7 @@ public sealed class TelegramNotificationRendererTests
     }
 
     [Fact]
-    public void Render_KeepsNativeAssetSymbolUnlinked()
+    public async Task RenderAsync_KeepsNativeAssetSymbolUnlinked()
     {
         var renderer = CreateRenderer();
         var payload = new NotificationPayload(
@@ -62,14 +62,14 @@ public sealed class TelegramNotificationRendererTests
             BlockNumber: 100,
             BlockTimestampUtc: DateTimeOffset.UtcNow);
 
-        var rendered = renderer.Render(payload);
+        var rendered = await renderer.RenderAsync(payload, CancellationToken.None);
 
         Assert.Contains("1\\.25 BNB", rendered.Text);
         Assert.DoesNotContain("/token/", rendered.Text);
     }
 
     [Fact]
-    public void Render_RendersMultipleTransferLinesForAggregatedNotification()
+    public async Task RenderAsync_RendersMultipleTransferLinesForAggregatedNotification()
     {
         var renderer = CreateRenderer();
         var payload = new AggregatedNotificationPayload(
@@ -102,7 +102,7 @@ public sealed class TelegramNotificationRendererTests
                     UsdValue: 2754m)
             ]);
 
-        var rendered = renderer.Render(payload);
+        var rendered = await renderer.RenderAsync(payload, CancellationToken.None);
 
         Assert.Contains("Received: 62877 [ESPORTS](https://bscscan.com/token/0x2222222222222222222222222222222222222222) \\(\\~$2876\\) From: [0x1111\\.\\.\\.1111](https://bscscan.com/address/0x1111111111111111111111111111111111111111)", rendered.Text);
         Assert.Contains("Sent: 2758 [USDT](https://bscscan.com/token/0x55d398326f99059fF775485246999027B3197955) \\(\\~$2754\\) To: [Dex Router \\(OKX\\)](https://bscscan.com/address/0x3333333333333333333333333333333333333333)", rendered.Text);
@@ -110,7 +110,7 @@ public sealed class TelegramNotificationRendererTests
     }
 
     [Fact]
-    public void Render_UsesAddressLabelsForTrackedWalletFallbackAndCounterparties()
+    public async Task RenderAsync_UsesAddressLabelsForTrackedWalletFallbackAndCounterparties()
     {
         using var cache = new InMemoryAddressLabelCacheService();
         cache.ReplaceAll(
@@ -137,7 +137,7 @@ public sealed class TelegramNotificationRendererTests
             BlockNumber: 100,
             BlockTimestampUtc: DateTimeOffset.UtcNow);
 
-        var rendered = renderer.Render(payload);
+        var rendered = await renderer.RenderAsync(payload, CancellationToken.None);
 
         Assert.Contains("[vitalik\\.eth](https://bscscan.com/address/0x52908400098527886E0F7030069857D2E4169EE7) \\| BNB", rendered.Text);
         Assert.Contains("From: [MEXC](https://bscscan.com/address/0x1111111111111111111111111111111111111111)", rendered.Text);
@@ -147,7 +147,9 @@ public sealed class TelegramNotificationRendererTests
     private static TelegramNotificationRenderer CreateRenderer(InMemoryAddressLabelCacheService? cache = null)
     {
         cache ??= new InMemoryAddressLabelCacheService();
-        return new TelegramNotificationRenderer(new StaticChainMetadataProvider(), new AddressLabelResolver(cache));
+        return new TelegramNotificationRenderer(
+            new StaticChainMetadataProvider(),
+            new AddressLabelResolver(cache, new FakeEnsReverseLookupProvider()));
     }
 
     private static AddressLabelCacheEntry CreateLabel(string address, SupportedChain? chain, string label)
@@ -162,5 +164,11 @@ public sealed class TelegramNotificationRendererTests
             AddressLabelKind.Exchange,
             AddressLabelSource.SeedFile,
             Priority: 100);
+    }
+
+    private sealed class FakeEnsReverseLookupProvider : IEnsReverseLookupProvider
+    {
+        public Task<string?> ResolveNameAsync(Address address, CancellationToken cancellationToken)
+            => Task.FromResult<string?>(null);
     }
 }

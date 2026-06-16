@@ -23,28 +23,32 @@ public sealed class TelegramNotificationRenderer(
         '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
     ];
 
-    public TelegramRenderedMessage Render(NotificationPayload payload)
-        => Render(AggregatedNotificationPayload.FromSingle(payload));
+    public Task<TelegramRenderedMessage> RenderAsync(NotificationPayload payload, CancellationToken cancellationToken)
+        => RenderAsync(AggregatedNotificationPayload.FromSingle(payload), cancellationToken);
 
-    public TelegramRenderedMessage Render(AggregatedNotificationPayload payload)
+    public async Task<TelegramRenderedMessage> RenderAsync(
+        AggregatedNotificationPayload payload,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(payload);
 
         var chainMetadata = chainMetadataProvider.Get(payload.Chain);
-        var trackedWalletText = ResolveTrackedWalletText(
+        var trackedWalletText = await ResolveTrackedWalletTextAsync(
             payload.Chain,
             payload.TrackedWalletAddress,
-            payload.TrackedWalletAlias);
+            payload.TrackedWalletAlias,
+            cancellationToken);
 
         var trackedWalletLink = Link(
             trackedWalletText,
             chainMetadata.GetAddressUrl(payload.TrackedWalletAddress));
 
         var transactionLink = Link("Tx hash", chainMetadata.GetTransactionUrl(payload.TransactionHash));
-        var lines = payload.Lines
-            .Take(MaxRenderedTransferLines)
-            .Select(line => RenderLine(payload.Chain, line, chainMetadata))
-            .ToList();
+        var lines = new List<string>();
+        foreach (var line in payload.Lines.Take(MaxRenderedTransferLines))
+        {
+            lines.Add(await RenderLineAsync(payload.Chain, line, chainMetadata, cancellationToken));
+        }
 
         if (payload.Lines.Count > MaxRenderedTransferLines)
         {
@@ -59,9 +63,17 @@ public sealed class TelegramNotificationRenderer(
         return new TelegramRenderedMessage(text, ParseMode.MarkdownV2);
     }
 
-    private string RenderLine(SupportedChain chain, NotificationTransferLine line, ChainMetadata chainMetadata)
+    private async Task<string> RenderLineAsync(
+        SupportedChain chain,
+        NotificationTransferLine line,
+        ChainMetadata chainMetadata,
+        CancellationToken cancellationToken)
     {
-        var counterpartyText = ResolveCounterpartyText(chain, line.CounterpartyAddress, line.CounterpartyAlias);
+        var counterpartyText = await ResolveCounterpartyTextAsync(
+            chain,
+            line.CounterpartyAddress,
+            line.CounterpartyAlias,
+            cancellationToken);
         var counterparty = string.IsNullOrWhiteSpace(line.CounterpartyAddress)
             ? EscapeText("unknown")
             : Link(counterpartyText, chainMetadata.GetAddressUrl(line.CounterpartyAddress));
@@ -86,7 +98,11 @@ public sealed class TelegramNotificationRenderer(
         return $"{EscapeText(operationText)}: {amount} {symbol}{usdPart} {EscapeText(counterpartyRole)}: {counterparty}";
     }
 
-    private string ResolveTrackedWalletText(SupportedChain chain, string address, string? alias)
+    private async Task<string> ResolveTrackedWalletTextAsync(
+        SupportedChain chain,
+        string address,
+        string? alias,
+        CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(alias))
         {
@@ -95,16 +111,20 @@ public sealed class TelegramNotificationRenderer(
 
         var addressResult = Address.Normalize(address);
         return addressResult.IsSuccess
-            ? addressLabelResolver.Resolve(chain, addressResult.Value).DisplayText
+            ? (await addressLabelResolver.ResolveAsync(chain, addressResult.Value, cancellationToken)).DisplayText
             : ShortAddress(address);
     }
 
-    private string ResolveCounterpartyText(SupportedChain chain, string? address, string? alias)
+    private async Task<string> ResolveCounterpartyTextAsync(
+        SupportedChain chain,
+        string? address,
+        string? alias,
+        CancellationToken cancellationToken)
     {
         var addressResult = Address.Normalize(address);
         if (addressResult.IsSuccess)
         {
-            var resolution = addressLabelResolver.Resolve(chain, addressResult.Value);
+            var resolution = await addressLabelResolver.ResolveAsync(chain, addressResult.Value, cancellationToken);
             if (resolution.IsLabeled)
             {
                 return resolution.DisplayText;

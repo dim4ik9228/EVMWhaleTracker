@@ -1,5 +1,7 @@
 using Application.TrackedWallets;
+using Application.Abstractions;
 using Domain.Common;
+using Domain.ValueObjects;
 using MediatR;
 using Presentation.Telegram.Commands;
 
@@ -33,7 +35,7 @@ public sealed class TelegramCommandProcessorTests
         Assert.NotNull(response);
         Assert.Contains("Available commands:", response!.Text);
         Assert.Contains("&lt;address&gt;", response.Text);
-        Assert.Contains("&lt;name&gt;", response.Text);
+        Assert.Contains("[name]", response.Text);
     }
 
     [Fact]
@@ -85,6 +87,29 @@ public sealed class TelegramCommandProcessorTests
         var request = Assert.IsType<AddTrackedWalletCommand>(sender.SentRequests[0]);
         Assert.Equal(LowercaseAddress, request.RawAddress);
         Assert.Equal("Main Address", request.Alias);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_AddCommand_WithoutAlias_UsesEnsNameWhenAvailable()
+    {
+        var sender = new FakeSender();
+        var pendingAliasRequests = new InMemoryPendingWalletAliasRequestStore();
+        var ensProvider = new FakeEnsReverseLookupProvider("vitalik.eth");
+        var processor = CreateProcessor(sender, pendingAliasRequests, ensProvider);
+
+        var response = await processor.ProcessAsync(
+            new TelegramCommandRequest(7777, "alice", $"/add {LowercaseAddress}", IsPrivateChat: true),
+            CancellationToken.None);
+
+        Assert.NotNull(response);
+        Assert.Contains("Tracked wallet added successfully", response!.Text);
+        Assert.Single(sender.SentRequests);
+        Assert.False(pendingAliasRequests.TryGet(7777, out _));
+        Assert.Equal(1, ensProvider.Calls);
+
+        var request = Assert.IsType<AddTrackedWalletCommand>(sender.SentRequests[0]);
+        Assert.Equal(LowercaseAddress, request.RawAddress);
+        Assert.Equal("vitalik.eth", request.Alias);
     }
 
     [Fact]
@@ -156,8 +181,23 @@ public sealed class TelegramCommandProcessorTests
 
     private static TelegramCommandProcessor CreateProcessor(
         FakeSender sender,
-        IPendingWalletAliasRequestStore? pendingAliasRequests = null)
-        => new(sender, pendingAliasRequests ?? new InMemoryPendingWalletAliasRequestStore());
+        IPendingWalletAliasRequestStore? pendingAliasRequests = null,
+        IEnsReverseLookupProvider? ensReverseLookupProvider = null)
+        => new(
+            sender,
+            pendingAliasRequests ?? new InMemoryPendingWalletAliasRequestStore(),
+            ensReverseLookupProvider ?? new FakeEnsReverseLookupProvider());
+
+    private sealed class FakeEnsReverseLookupProvider(string? name = null) : IEnsReverseLookupProvider
+    {
+        public int Calls { get; private set; }
+
+        public Task<string?> ResolveNameAsync(Address address, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(name);
+        }
+    }
 
     private sealed class FakeSender : ISender
     {

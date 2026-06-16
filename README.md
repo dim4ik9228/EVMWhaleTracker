@@ -39,6 +39,8 @@ $seedPath = (Resolve-Path .\data\address-labels).Path
 docker compose run --rm --build -v "${seedPath}:/seed:ro" app import-address-labels /seed/address-labels.exchange-bridge.seed.json
 ```
 
+On Ethereum cache misses, the bot can also use ENS reverse lookup through the configured Ethereum HTTP RPC endpoint. See `docs/address-labels.md` for details.
+
 ## Documentation
 
 - AI/project context: `docs/ai/context.md`

@@ -14,5 +14,8 @@ public sealed record AddressLabelResolution(
 
 public interface IAddressLabelResolver
 {
-    AddressLabelResolution Resolve(SupportedChain chain, Address address);
+    Task<AddressLabelResolution> ResolveAsync(
+        SupportedChain chain,
+        Address address,
+        CancellationToken cancellationToken);
 }
