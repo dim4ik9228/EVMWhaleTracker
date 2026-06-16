@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Text;
 using Application.Abstractions;
 using Application.Messaging;
+using Domain.Common;
+using Domain.ValueObjects;
 using Telegram.Bot.Types.Enums;
 
 namespace Presentation.Telegram.Services;
@@ -9,7 +11,9 @@ namespace Presentation.Telegram.Services;
 /// <summary>
 /// Builds compact MarkdownV2 wallet-activity notifications with explorer links.
 /// </summary>
-public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMetadataProvider)
+public sealed class TelegramNotificationRenderer(
+    IChainMetadataProvider chainMetadataProvider,
+    IAddressLabelResolver addressLabelResolver)
     : ITelegramNotificationRenderer
 {
     private const int MaxRenderedTransferLines = 10;
@@ -27,9 +31,10 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
         ArgumentNullException.ThrowIfNull(payload);
 
         var chainMetadata = chainMetadataProvider.Get(payload.Chain);
-        var trackedWalletText = string.IsNullOrWhiteSpace(payload.TrackedWalletAlias)
-            ? ShortAddress(payload.TrackedWalletAddress)
-            : payload.TrackedWalletAlias;
+        var trackedWalletText = ResolveTrackedWalletText(
+            payload.Chain,
+            payload.TrackedWalletAddress,
+            payload.TrackedWalletAlias);
 
         var trackedWalletLink = Link(
             trackedWalletText,
@@ -38,7 +43,7 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
         var transactionLink = Link("Tx hash", chainMetadata.GetTransactionUrl(payload.TransactionHash));
         var lines = payload.Lines
             .Take(MaxRenderedTransferLines)
-            .Select(line => RenderLine(line, chainMetadata))
+            .Select(line => RenderLine(payload.Chain, line, chainMetadata))
             .ToList();
 
         if (payload.Lines.Count > MaxRenderedTransferLines)
@@ -54,12 +59,9 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
         return new TelegramRenderedMessage(text, ParseMode.MarkdownV2);
     }
 
-    private static string RenderLine(NotificationTransferLine line, ChainMetadata chainMetadata)
+    private string RenderLine(SupportedChain chain, NotificationTransferLine line, ChainMetadata chainMetadata)
     {
-        var counterpartyText = string.IsNullOrWhiteSpace(line.CounterpartyAlias)
-            ? ShortAddress(line.CounterpartyAddress)
-            : line.CounterpartyAlias;
-
+        var counterpartyText = ResolveCounterpartyText(chain, line.CounterpartyAddress, line.CounterpartyAlias);
         var counterparty = string.IsNullOrWhiteSpace(line.CounterpartyAddress)
             ? EscapeText("unknown")
             : Link(counterpartyText, chainMetadata.GetAddressUrl(line.CounterpartyAddress));
@@ -82,6 +84,36 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
             : string.Empty;
 
         return $"{EscapeText(operationText)}: {amount} {symbol}{usdPart} {EscapeText(counterpartyRole)}: {counterparty}";
+    }
+
+    private string ResolveTrackedWalletText(SupportedChain chain, string address, string? alias)
+    {
+        if (!string.IsNullOrWhiteSpace(alias))
+        {
+            return alias;
+        }
+
+        var addressResult = Address.Normalize(address);
+        return addressResult.IsSuccess
+            ? addressLabelResolver.Resolve(chain, addressResult.Value).DisplayText
+            : ShortAddress(address);
+    }
+
+    private string ResolveCounterpartyText(SupportedChain chain, string? address, string? alias)
+    {
+        var addressResult = Address.Normalize(address);
+        if (addressResult.IsSuccess)
+        {
+            var resolution = addressLabelResolver.Resolve(chain, addressResult.Value);
+            if (resolution.IsLabeled)
+            {
+                return resolution.DisplayText;
+            }
+        }
+
+        return string.IsNullOrWhiteSpace(alias)
+            ? ShortAddress(address)
+            : alias;
     }
 
     private static string Link(string visibleText, string url)

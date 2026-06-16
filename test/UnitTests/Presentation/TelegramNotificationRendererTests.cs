@@ -1,6 +1,10 @@
+using Application.Abstractions;
 using Application.Messaging;
 using Domain.Common;
+using Domain.Entities;
+using Domain.ValueObjects;
 using Infrastructure.Blockchain;
+using Infrastructure.Caching;
 using Presentation.Telegram.Services;
 using Telegram.Bot.Types.Enums;
 
@@ -11,7 +15,7 @@ public sealed class TelegramNotificationRendererTests
     [Fact]
     public void Render_EscapesMarkdownV2_AndUsesCompactLinkedLayout()
     {
-        var renderer = new TelegramNotificationRenderer(new StaticChainMetadataProvider());
+        var renderer = CreateRenderer();
         var payload = new NotificationPayload(
             TelegramUserId: 7777,
             Chain: SupportedChain.Bsc,
@@ -40,7 +44,7 @@ public sealed class TelegramNotificationRendererTests
     [Fact]
     public void Render_KeepsNativeAssetSymbolUnlinked()
     {
-        var renderer = new TelegramNotificationRenderer(new StaticChainMetadataProvider());
+        var renderer = CreateRenderer();
         var payload = new NotificationPayload(
             TelegramUserId: 7777,
             Chain: SupportedChain.Bsc,
@@ -67,7 +71,7 @@ public sealed class TelegramNotificationRendererTests
     [Fact]
     public void Render_RendersMultipleTransferLinesForAggregatedNotification()
     {
-        var renderer = new TelegramNotificationRenderer(new StaticChainMetadataProvider());
+        var renderer = CreateRenderer();
         var payload = new AggregatedNotificationPayload(
             TelegramUserId: 7777,
             Chain: SupportedChain.Bsc,
@@ -103,5 +107,60 @@ public sealed class TelegramNotificationRendererTests
         Assert.Contains("Received: 62877 [ESPORTS](https://bscscan.com/token/0x2222222222222222222222222222222222222222) \\(\\~$2876\\) From: [0x1111\\.\\.\\.1111](https://bscscan.com/address/0x1111111111111111111111111111111111111111)", rendered.Text);
         Assert.Contains("Sent: 2758 [USDT](https://bscscan.com/token/0x55d398326f99059fF775485246999027B3197955) \\(\\~$2754\\) To: [Dex Router \\(OKX\\)](https://bscscan.com/address/0x3333333333333333333333333333333333333333)", rendered.Text);
         Assert.Contains("[Tx hash](https://bscscan.com/tx/0xswap)", rendered.Text);
+    }
+
+    [Fact]
+    public void Render_UsesAddressLabelsForTrackedWalletFallbackAndCounterparties()
+    {
+        using var cache = new InMemoryAddressLabelCacheService();
+        cache.ReplaceAll(
+        [
+            CreateLabel("0x52908400098527886E0F7030069857D2E4169EE7", null, "vitalik.eth"),
+            CreateLabel("0x1111111111111111111111111111111111111111", SupportedChain.Bsc, "MEXC")
+        ]);
+
+        var renderer = CreateRenderer(cache);
+        var payload = new NotificationPayload(
+            TelegramUserId: 7777,
+            Chain: SupportedChain.Bsc,
+            Operation: NotificationOperation.Received,
+            TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",
+            TrackedWalletAlias: null,
+            CounterpartyAddress: "0x1111111111111111111111111111111111111111",
+            CounterpartyAlias: "raw alias",
+            TransactionHash: "0xtxhash",
+            AssetSymbol: "BNB",
+            AssetName: "BNB",
+            TokenContractAddress: null,
+            Amount: 1.25m,
+            UsdValue: 750m,
+            BlockNumber: 100,
+            BlockTimestampUtc: DateTimeOffset.UtcNow);
+
+        var rendered = renderer.Render(payload);
+
+        Assert.Contains("[vitalik\\.eth](https://bscscan.com/address/0x52908400098527886E0F7030069857D2E4169EE7) \\| BNB", rendered.Text);
+        Assert.Contains("From: [MEXC](https://bscscan.com/address/0x1111111111111111111111111111111111111111)", rendered.Text);
+        Assert.DoesNotContain("raw alias", rendered.Text);
+    }
+
+    private static TelegramNotificationRenderer CreateRenderer(InMemoryAddressLabelCacheService? cache = null)
+    {
+        cache ??= new InMemoryAddressLabelCacheService();
+        return new TelegramNotificationRenderer(new StaticChainMetadataProvider(), new AddressLabelResolver(cache));
+    }
+
+    private static AddressLabelCacheEntry CreateLabel(string address, SupportedChain? chain, string label)
+    {
+        var addressResult = Address.Normalize(address);
+        Assert.True(addressResult.IsSuccess);
+
+        return new AddressLabelCacheEntry(
+            addressResult.Value,
+            chain,
+            label,
+            AddressLabelKind.Exchange,
+            AddressLabelSource.SeedFile,
+            Priority: 100);
     }
 }

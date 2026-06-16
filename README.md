@@ -30,10 +30,20 @@ BLOCKCHAIN_0_WEB_SOCKET_RPC_URL=wss://bsc-mainnet.infura.io/ws/v3/
 
 The app appends `BLOCKCHAIN_RPC_API_KEY` at startup for every configured Infura network. For providers that need the key in the middle of the URL, use `{ApiKey}` or `{RpcApiKey}` in the URL.
 
+## Address Labels
+
+Counterparty labels are stored in PostgreSQL and hydrated into memory at startup, so notification rendering does not query the database. Import the reviewed seed JSON with:
+
+```powershell
+$seedPath = (Resolve-Path .\data\address-labels).Path
+docker compose run --rm --build -v "${seedPath}:/seed:ro" app import-address-labels /seed/address-labels.exchange-bridge.seed.json
+```
+
 ## Documentation
 
 - AI/project context: `docs/ai/context.md`
 - AI documentation conventions: `docs/ai/conventions.md`
+- Address labels and seed import: `docs/address-labels.md`
 - Tracking pipeline architecture: `docs/architecture/tracking-pipeline.md`
 - Architecture decisions: `docs/decisions/`
 - Implementation plans: `docs/plans/`

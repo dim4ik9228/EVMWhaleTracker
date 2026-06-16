@@ -22,6 +22,67 @@ namespace Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Domain.Entities.AddressLabel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(42)
+                        .HasColumnType("character varying(42)");
+
+                    b.Property<int?>("Chain")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceReference")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Address", "Chain")
+                        .IsUnique()
+                        .HasFilter("\"IsEnabled\" = TRUE AND \"Chain\" IS NOT NULL");
+
+                    b.HasIndex("Address")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AddressLabels_Address_Global")
+                        .HasFilter("\"IsEnabled\" = TRUE AND \"Chain\" IS NULL");
+
+                    b.HasIndex("Chain");
+
+                    b.HasIndex("Kind");
+
+                    b.HasIndex("Source");
+
+                    b.ToTable("AddressLabels", (string)null);
+                });
+
             modelBuilder.Entity("Domain.Entities.TrackedWallet", b =>
                 {
                     b.Property<Guid>("Id")

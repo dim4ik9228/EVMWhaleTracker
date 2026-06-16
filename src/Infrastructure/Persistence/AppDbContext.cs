@@ -11,6 +11,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
     public DbSet<TrackedWallet> TrackedWallets => Set<TrackedWallet>();
 
+    public DbSet<AddressLabel> AddressLabels => Set<AddressLabel>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

@@ -481,3 +481,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Large local address-label imports and generated candidates.
+data/address-labels/raw/
+data/address-labels/generated/

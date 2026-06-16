@@ -52,6 +52,8 @@ if (string.IsNullOrWhiteSpace(connectionString))
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddScoped<ITrackedWalletRepository, TrackedWalletRepository>();
+builder.Services.AddScoped<IAddressLabelRepository, AddressLabelRepository>();
+builder.Services.AddScoped<AddressLabelSeedImporter>();
 builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssemblyContaining<AssemblyReference>();
@@ -62,15 +64,19 @@ builder.Services.AddMemoryCache();
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<OnChainPipelineChannels>();
 builder.Services.AddSingleton<InMemoryCacheService>();
+builder.Services.AddSingleton<InMemoryAddressLabelCacheService>();
 builder.Services.AddSingleton<TelegramGlobalRateLimiter>();
 builder.Services.AddSingleton<IChainMetadataProvider, StaticChainMetadataProvider>();
 builder.Services.AddSingleton<Erc20TransferLogParser>();
 builder.Services.AddSingleton<ITrackedAddressCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
 builder.Services.AddSingleton<ITrackedWalletCacheService>(sp => sp.GetRequiredService<InMemoryCacheService>());
+builder.Services.AddSingleton<IAddressLabelCacheService>(sp => sp.GetRequiredService<InMemoryAddressLabelCacheService>());
+builder.Services.AddSingleton<IAddressLabelResolver, AddressLabelResolver>();
 builder.Services.AddSingleton<IPendingWalletAliasRequestStore, InMemoryPendingWalletAliasRequestStore>();
 builder.Services.AddScoped<ITelegramCommandProcessor, TelegramCommandProcessor>();
 builder.Services.AddSingleton<ITelegramNotificationRenderer, TelegramNotificationRenderer>();
 builder.Services.AddHostedService<TrackedWalletCacheHydrationService>();
+builder.Services.AddHostedService<AddressLabelCacheHydrationService>();
 
 var enabledBlockchainNetworks = BlockchainNetworkOptionsResolver.Resolve(builder.Configuration);
 builder.Services.AddSingleton<IReadOnlyList<BlockchainNetworkOptions>>(enabledBlockchainNetworks);
@@ -123,4 +129,40 @@ using (var scope = app.Services.CreateScope())
     await dbContext.Database.MigrateAsync();
 }
 
+if (args.Length > 0 && string.Equals(args[0], "import-address-labels", StringComparison.OrdinalIgnoreCase))
+{
+    await RunAddressLabelImportAsync(app.Services, args);
+    return;
+}
+
 await app.RunAsync();
+
+static async Task RunAddressLabelImportAsync(IServiceProvider serviceProvider, string[] args)
+{
+    if (args.Length < 2)
+    {
+        Console.WriteLine("Usage: import-address-labels <json-path> [--dry-run]");
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    var path = Path.GetFullPath(args[1]);
+    var dryRun = args.Any(arg => string.Equals(arg, "--dry-run", StringComparison.OrdinalIgnoreCase));
+
+    using var scope = serviceProvider.CreateScope();
+    var importer = scope.ServiceProvider.GetRequiredService<AddressLabelSeedImporter>();
+    var report = await importer.ImportAsync(path, dryRun, CancellationToken.None);
+
+    Console.WriteLine(dryRun ? "Address label import dry run complete." : "Address label import complete.");
+    Console.WriteLine($"Inserted: {report.Inserted}");
+    Console.WriteLine($"Updated: {report.Updated}");
+    Console.WriteLine($"Skipped: {report.Skipped}");
+    Console.WriteLine($"Invalid: {report.Invalid}");
+
+    foreach (var message in report.Messages)
+    {
+        Console.WriteLine(message);
+    }
+
+    Environment.ExitCode = report.Invalid == 0 ? 0 : 1;
+}

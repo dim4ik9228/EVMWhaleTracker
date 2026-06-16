@@ -51,4 +51,27 @@ public static class Errors
             "TrackedWallet.NotFound",
             "No tracked wallet was found for this Telegram user and address.");
     }
+
+    public static class AddressLabel
+    {
+        public static readonly Error AddressRequired = Error.Validation(
+            "AddressLabel.Address",
+            "An address label requires an EVM address.");
+
+        public static readonly Error LabelRequired = Error.Validation(
+            "AddressLabel.LabelRequired",
+            "An address label requires display text.");
+
+        public static readonly Error LabelTooLong = Error.Validation(
+            "AddressLabel.LabelTooLong",
+            "Address labels must be 64 characters or fewer.");
+
+        public static readonly Error SourceReferenceTooLong = Error.Validation(
+            "AddressLabel.SourceReferenceTooLong",
+            "Address label source references must be 512 characters or fewer.");
+
+        public static readonly Error DuplicateActiveLabel = Error.Validation(
+            "AddressLabel.DuplicateActiveLabel",
+            "An enabled label already exists for this address and chain scope.");
+    }
 }

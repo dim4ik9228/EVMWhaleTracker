@@ -1,0 +1,565 @@
+#!/usr/bin/env dotnet run
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+
+var options = ImportOptions.Parse(args);
+Directory.CreateDirectory(Path.GetDirectoryName(options.OutputPath)!);
+
+var extractor = new NameTagExtractor(options);
+var result = extractor.Extract();
+
+await File.WriteAllTextAsync(
+    options.OutputPath,
+    JsonSerializer.Serialize(result.Seed, SeedJsonContext.Default.CandidateSeed));
+
+Console.WriteLine($"Wrote {result.Seed.Entries.Count:N0} candidate entries to {options.OutputPath}");
+Console.WriteLine($"Read rows: {result.Stats.ReadRows:N0}");
+Console.WriteLine($"Null/empty nameTags skipped: {result.Stats.NullNameTagRows:N0}");
+Console.WriteLine($"Invalid address rows skipped: {result.Stats.InvalidAddressRows:N0}");
+Console.WriteLine($"Excluded by noise rules: {result.Stats.ExcludedRows:N0}");
+Console.WriteLine($"Duplicate rows collapsed: {result.Stats.DuplicateRows:N0}");
+Console.WriteLine();
+Console.WriteLine("Entries by chain:");
+foreach (var item in result.Seed.Entries.GroupBy(entry => entry.Chain).OrderBy(group => group.Key))
+{
+    Console.WriteLine($"  {item.Key ?? "Global"}: {item.Count():N0}");
+}
+
+Console.WriteLine();
+Console.WriteLine("Entries by kind:");
+foreach (var item in result.Seed.Entries.GroupBy(entry => entry.Kind).OrderByDescending(group => group.Count()))
+{
+    Console.WriteLine($"  {item.Key}: {item.Count():N0}");
+}
+
+Console.WriteLine();
+Console.WriteLine("Top source labels:");
+foreach (var item in result.Seed.Entries
+    .GroupBy(entry => entry.SourceLabel)
+    .OrderByDescending(group => group.Count())
+    .ThenBy(group => group.Key)
+    .Take(25))
+{
+    Console.WriteLine($"  {item.Key}: {item.Count():N0}");
+}
+
+internal sealed record ImportOptions(IReadOnlyList<InputSource> Inputs, string OutputPath, IReadOnlySet<string> IncludedKinds)
+{
+    public static ImportOptions Parse(string[] args)
+    {
+        var outputPath = "data/address-labels/generated/address-name-tags.seed.candidate.json";
+        var inputPaths = new List<string>();
+        var rawDirectory = "data/address-labels/raw";
+        var includedKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        for (var index = 0; index < args.Length; index++)
+        {
+            switch (args[index])
+            {
+                case "--output":
+                    outputPath = RequireValue(args, ref index, "--output");
+                    break;
+                case "--input":
+                    inputPaths.Add(RequireValue(args, ref index, "--input"));
+                    break;
+                case "--raw-dir":
+                    rawDirectory = RequireValue(args, ref index, "--raw-dir");
+                    break;
+                case "--kind":
+                    includedKinds.Add(RequireValue(args, ref index, "--kind"));
+                    break;
+                default:
+                    inputPaths.Add(args[index]);
+                    break;
+            }
+        }
+
+        if (inputPaths.Count == 0)
+        {
+            inputPaths.AddRange(FindRawInputs(rawDirectory));
+        }
+
+        var inputs = inputPaths.Select(InputSource.FromPath).ToArray();
+        return new ImportOptions(inputs, outputPath, includedKinds);
+    }
+
+    private static string RequireValue(string[] args, ref int index, string optionName)
+    {
+        if (index + 1 >= args.Length)
+        {
+            throw new ArgumentException($"{optionName} requires a value.");
+        }
+
+        index++;
+        return args[index];
+    }
+
+    private static IReadOnlyList<string> FindRawInputs(string rawDirectory)
+    {
+        if (!Directory.Exists(rawDirectory))
+        {
+            throw new DirectoryNotFoundException($"Raw address-label directory was not found: {rawDirectory}");
+        }
+
+        var supportedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "accounts.eth..json",
+            "accounts.eth.json",
+            "accounts.bsc.json",
+            "accounts.base.json",
+            "accounts.arbitrum.json"
+        };
+
+        var files = Directory
+            .EnumerateFiles(rawDirectory, "accounts.*.json", SearchOption.TopDirectoryOnly)
+            .Where(path => supportedFileNames.Contains(Path.GetFileName(path)))
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (files.Length == 0)
+        {
+            throw new InvalidOperationException($"No supported account JSON files were found in {rawDirectory}.");
+        }
+
+        return files;
+    }
+}
+
+internal sealed record InputSource(string Path, string Chain, int ChainId, string Source)
+{
+    public static InputSource FromPath(string path)
+    {
+        var fileName = System.IO.Path.GetFileName(path).ToLowerInvariant();
+        return fileName switch
+        {
+            "accounts.eth..json" or "accounts.eth.json" => new InputSource(path, "Ethereum", 1, "etherscan"),
+            "accounts.bsc.json" => new InputSource(path, "Bsc", 56, "bscscan"),
+            "accounts.base.json" => new InputSource(path, "Base", 8453, "basescan"),
+            "accounts.arbitrum.json" => new InputSource(path, "Arbitrum", 42161, "arbiscan"),
+            _ => throw new ArgumentException($"Cannot infer chain from file name '{fileName}'.")
+        };
+    }
+}
+
+internal sealed class NameTagExtractor(ImportOptions options)
+{
+    private static readonly Regex AddressRegex = new("^0x[0-9a-fA-F]{40}$", RegexOptions.Compiled);
+    private readonly Dictionary<string, CandidateEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ExtractionStats _stats = new();
+
+    private static readonly HashSet<string> ExcludedLabels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "blocked",
+        "burn",
+        "genesis",
+        "phish-hack",
+        "exploit",
+        "heist",
+        "spam-token",
+        "friend-tech-users",
+        "token-contract",
+        "bridged-token",
+        "nft",
+        "old-contract",
+        "deprecated",
+        "charity",
+        "mev-bot",
+        "proposer-fee-recipient",
+        "binance-pegged",
+        "erc-4337-bundler",
+        "avs-operator",
+        "token-sale",
+        "endaoment",
+        "my-crypto-heroes",
+        "aura-finance",
+        "donate",
+        "nonprofit"
+    };
+
+    private static readonly HashSet<string> LowSignalLabels = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "contract-deployer"
+    };
+
+    private static readonly string[] ExcludedNameTagTerms =
+    [
+        "fake_phishing",
+        "phishing",
+        "exploiter",
+        "exploit",
+        "hacker",
+        "drainer",
+        "scam",
+        "null:",
+        " token",
+        ": token",
+        "deployer",
+        " dep:",
+        " deposit",
+        "deposit address",
+        "charity",
+        "old ",
+        "old:",
+        "deprecated"
+    ];
+
+    private static readonly string[] ExchangeTerms =
+    [
+        "binance",
+        "bingx",
+        "coinbase",
+        "kraken",
+        "okx",
+        "bybit",
+        "kucoin",
+        "gate.io",
+        "gateio",
+        "mexc",
+        "bitget",
+        "htx",
+        "huobi",
+        "crypto.com",
+        "cryptocom",
+        "bitfinex",
+        "bitstamp",
+        "upbit",
+        "bithumb",
+        "gemini",
+        "robinhood",
+        "wintermute",
+        "jump trading",
+        "amber group",
+        "flow traders"
+    ];
+
+    private static readonly string[] BridgeTerms =
+    [
+        "bridge",
+        "stargate",
+        "layerzero",
+        "across",
+        "synapse",
+        "multichain",
+        "celer",
+        "hop protocol",
+        "arbitrum one:",
+        "optimism:",
+        "polygon bridge",
+        "wormhole"
+    ];
+
+    private static readonly string[] DexRouterTerms =
+    [
+        "router",
+        "swaprouter",
+        "swap router",
+        "uniswap",
+        "pancakeswap",
+        "sushiswap",
+        "1inch",
+        "0x:",
+        "paraswap",
+        "kyberswap",
+        "camelot",
+        "trader joe",
+        "aerodrome",
+        "velodrome",
+        "balancer",
+        "curve.fi",
+        "curve:"
+    ];
+
+    private static readonly string[] TreasuryTerms =
+    [
+        "treasury",
+        "foundation",
+        "multisig",
+        "dao:"
+    ];
+
+    public ExtractionResult Extract()
+    {
+        foreach (var input in options.Inputs)
+        {
+            ExtractFile(input);
+        }
+
+        var seed = new CandidateSeed(
+            GeneratedAtUtc: DateTimeOffset.UtcNow,
+            Inputs: options.Inputs,
+            Filters: new CandidateFilters(
+                ExcludedLabels.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+                LowSignalLabels.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
+                ExcludedNameTagTerms,
+                "Only rows with non-empty nameTag are eligible. Output keeps nameTag as display text and preserves scraped label only as sourceLabel metadata."),
+            Stats: _stats,
+            Entries: _entries.Values
+                .Where(entry => options.IncludedKinds.Count == 0 || options.IncludedKinds.Contains(entry.Kind))
+                .OrderByDescending(entry => entry.Priority)
+                .ThenBy(entry => entry.Chain ?? string.Empty)
+                .ThenBy(entry => entry.NameTag, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(entry => entry.Address, StringComparer.OrdinalIgnoreCase)
+                .ToArray());
+
+        return new ExtractionResult(seed, _stats);
+    }
+
+    private void ExtractFile(InputSource input)
+    {
+        if (!File.Exists(input.Path))
+        {
+            throw new FileNotFoundException("Input file was not found.", input.Path);
+        }
+
+        using var stream = File.OpenRead(input.Path);
+        using var document = JsonDocument.Parse(stream, new JsonDocumentOptions { AllowTrailingCommas = true });
+        if (document.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidOperationException($"{input.Path} must contain a JSON array.");
+        }
+
+        foreach (var row in document.RootElement.EnumerateArray())
+        {
+            _stats.ReadRows++;
+            ProcessRow(input, row);
+        }
+    }
+
+    private void ProcessRow(InputSource input, JsonElement row)
+    {
+        var address = GetString(row, "address");
+        if (address is null || !AddressRegex.IsMatch(address))
+        {
+            _stats.InvalidAddressRows++;
+            return;
+        }
+
+        var nameTag = CleanNameTag(GetString(row, "nameTag"));
+        if (nameTag is null)
+        {
+            _stats.NullNameTagRows++;
+            return;
+        }
+
+        var sourceLabel = CleanSourceLabel(GetString(row, "label")) ?? "unknown";
+        if (ShouldExclude(sourceLabel, nameTag))
+        {
+            _stats.ExcludedRows++;
+            return;
+        }
+
+        var kind = Classify(sourceLabel, nameTag);
+        if (kind == CandidateKind.Unknown)
+        {
+            _stats.ExcludedRows++;
+            return;
+        }
+
+        var priority = kind switch
+        {
+            CandidateKind.Exchange => 100,
+            CandidateKind.Bridge => 90,
+            CandidateKind.DexRouter => 85,
+            CandidateKind.Treasury => 80,
+            CandidateKind.Protocol => 70,
+            _ => 50
+        };
+
+        var isGlobalExchange = kind == CandidateKind.Exchange;
+        var candidate = new CandidateEntry(
+            Address: address.ToLowerInvariant(),
+            Chain: isGlobalExchange ? null : input.Chain,
+            ChainId: isGlobalExchange ? null : input.ChainId,
+            NameTag: nameTag,
+            SourceLabel: sourceLabel,
+            Kind: kind.ToString(),
+            Source: input.Source,
+            SourceReference: BuildSourceReference(input.Source, address),
+            Priority: priority,
+            IsEnabled: true);
+
+        var key = isGlobalExchange
+            ? $"global:{candidate.Address}"
+            : $"{input.ChainId}:{candidate.Address}";
+        if (_entries.TryGetValue(key, out var existing))
+        {
+            _stats.DuplicateRows++;
+            if (candidate.Priority > existing.Priority ||
+                candidate.Priority == existing.Priority && candidate.NameTag.Length < existing.NameTag.Length)
+            {
+                _entries[key] = candidate;
+            }
+
+            return;
+        }
+
+        _entries[key] = candidate;
+    }
+
+    private static bool ShouldExclude(string label, string nameTag)
+    {
+        if (ExcludedLabels.Contains(label))
+        {
+            return true;
+        }
+
+        var normalized = nameTag.ToLowerInvariant();
+        return ExcludedNameTagTerms.Any(normalized.Contains);
+    }
+
+    private static CandidateKind Classify(string label, string nameTag)
+    {
+        var text = $"{label} {nameTag}".ToLowerInvariant();
+
+        if (IsExchange(label, nameTag))
+        {
+            return CandidateKind.Exchange;
+        }
+
+        if (BridgeTerms.Any(text.Contains) || label.Equals("bridge", StringComparison.OrdinalIgnoreCase))
+        {
+            return CandidateKind.Bridge;
+        }
+
+        if (DexRouterTerms.Any(text.Contains) || label.Equals("defi", StringComparison.OrdinalIgnoreCase))
+        {
+            return CandidateKind.DexRouter;
+        }
+
+        if (TreasuryTerms.Any(text.Contains))
+        {
+            return CandidateKind.Treasury;
+        }
+
+        if (LowSignalLabels.Contains(label))
+        {
+            return CandidateKind.Unknown;
+        }
+
+        if (nameTag.Contains(':'))
+        {
+            return CandidateKind.Protocol;
+        }
+
+        return CandidateKind.Unknown;
+    }
+
+    private static bool IsExchange(string label, string nameTag)
+    {
+        if (label.Equals("exchange", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (ExchangeTerms.Any(term => label.Equals(term, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        var normalizedNameTag = nameTag.ToLowerInvariant();
+        if (normalizedNameTag.Contains("charity") ||
+            normalizedNameTag.Contains("token") ||
+            normalizedNameTag.Contains("deployer"))
+        {
+            return false;
+        }
+
+        return ExchangeTerms.Any(term =>
+            normalizedNameTag.StartsWith($"{term} ", StringComparison.OrdinalIgnoreCase) ||
+            normalizedNameTag.StartsWith($"{term}:", StringComparison.OrdinalIgnoreCase) ||
+            normalizedNameTag.Equals(term, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string? GetString(JsonElement row, string propertyName)
+    {
+        return row.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
+    }
+
+    private static string? CleanNameTag(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var cleaned = value
+            .Replace('\u2026', '.')
+            .Replace("  ", " ", StringComparison.Ordinal)
+            .Trim();
+
+        return cleaned.Length is > 0 and <= 96 ? cleaned : null;
+    }
+
+    private static string? CleanSourceLabel(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToLowerInvariant();
+
+    private static string BuildSourceReference(string source, string address)
+    {
+        var host = source switch
+        {
+            "etherscan" => "etherscan.io",
+            "bscscan" => "bscscan.com",
+            "basescan" => "basescan.org",
+            "arbiscan" => "arbiscan.io",
+            _ => source
+        };
+
+        return $"https://{host}/address/{address.ToLowerInvariant()}";
+    }
+}
+
+internal sealed record ExtractionResult(CandidateSeed Seed, ExtractionStats Stats);
+
+internal sealed class ExtractionStats
+{
+    public int ReadRows { get; set; }
+    public int NullNameTagRows { get; set; }
+    public int InvalidAddressRows { get; set; }
+    public int ExcludedRows { get; set; }
+    public int DuplicateRows { get; set; }
+}
+
+internal sealed record CandidateSeed(
+    DateTimeOffset GeneratedAtUtc,
+    IReadOnlyList<InputSource> Inputs,
+    CandidateFilters Filters,
+    ExtractionStats Stats,
+    IReadOnlyList<CandidateEntry> Entries);
+
+internal sealed record CandidateFilters(
+    IReadOnlyList<string> ExcludedLabels,
+    IReadOnlyList<string> LowSignalLabels,
+    IReadOnlyList<string> ExcludedNameTagTerms,
+    string Notes);
+
+internal sealed record CandidateEntry(
+    string Address,
+    string? Chain,
+    int? ChainId,
+    string NameTag,
+    string SourceLabel,
+    string Kind,
+    string Source,
+    string SourceReference,
+    int Priority,
+    bool IsEnabled);
+
+internal enum CandidateKind
+{
+    Unknown,
+    Exchange,
+    DexRouter,
+    Bridge,
+    Protocol,
+    Treasury
+}
+
+[JsonSourceGenerationOptions(
+    WriteIndented = true,
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(CandidateSeed))]
+internal sealed partial class SeedJsonContext : JsonSerializerContext;
