@@ -12,6 +12,8 @@ data/address-labels/raw/
   accounts.arbitrum.json
 ```
 
+Raw files source: https://github.com/dawsbot/eth-labels
+
 Run from the repository root:
 
 ```powershell
