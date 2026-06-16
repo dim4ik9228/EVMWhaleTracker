@@ -17,6 +17,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
     private readonly OnChainPipelineChannels _channels;
     private readonly ITelegramBotClient _telegramBotClient;
     private readonly TelegramGlobalRateLimiter _rateLimiter;
+    private readonly ITelegramNotificationEnricher _notificationEnricher;
     private readonly ITelegramNotificationRenderer _notificationRenderer;
     private readonly TelegramNotificationSendRetryPolicy _sendRetryPolicy = new();
     private readonly ConcurrentDictionary<long, SemaphoreSlim> _chatLimiters = new();
@@ -25,12 +26,14 @@ public sealed class NotificationDispatcherWorker : BackgroundService
         OnChainPipelineChannels channels,
         ITelegramBotClient telegramBotClient,
         TelegramGlobalRateLimiter rateLimiter,
+        ITelegramNotificationEnricher notificationEnricher,
         ITelegramNotificationRenderer notificationRenderer,
         ILogger<NotificationDispatcherWorker> logger)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(telegramBotClient);
         ArgumentNullException.ThrowIfNull(rateLimiter);
+        ArgumentNullException.ThrowIfNull(notificationEnricher);
         ArgumentNullException.ThrowIfNull(notificationRenderer);
         ArgumentNullException.ThrowIfNull(logger);
 
@@ -38,6 +41,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
         _telegramBotClient = telegramBotClient;
         _logger = logger;
         _rateLimiter = rateLimiter;
+        _notificationEnricher = notificationEnricher;
         _notificationRenderer = notificationRenderer;
     }
 
@@ -58,7 +62,8 @@ public sealed class NotificationDispatcherWorker : BackgroundService
             {
                 await chatLimiter.WaitAsync(stoppingToken);
                 chatLimiterAcquired = true;
-                var renderedMessage = await _notificationRenderer.RenderAsync(payload, stoppingToken);
+                var enrichedPayload = await _notificationEnricher.EnrichAsync(payload, stoppingToken);
+                var renderedMessage = _notificationRenderer.Render(enrichedPayload);
                 var sent = await SendWithRetryAsync(payload, renderedMessage, stoppingToken);
                 if (sent)
                 {

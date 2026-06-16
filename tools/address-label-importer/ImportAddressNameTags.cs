@@ -13,7 +13,7 @@ await File.WriteAllTextAsync(
     options.OutputPath,
     JsonSerializer.Serialize(result.Seed, SeedJsonContext.Default.CandidateSeed));
 
-Console.WriteLine($"Wrote {result.Seed.Entries.Count:N0} candidate entries to {options.OutputPath}");
+Console.WriteLine($"Wrote {result.Seed.Entries.Count:N0} {options.ReviewStatus} entries to {options.OutputPath}");
 Console.WriteLine($"Read rows: {result.Stats.ReadRows:N0}");
 Console.WriteLine($"Null/empty nameTags skipped: {result.Stats.NullNameTagRows:N0}");
 Console.WriteLine($"Invalid address rows skipped: {result.Stats.InvalidAddressRows:N0}");
@@ -44,7 +44,11 @@ foreach (var item in result.Seed.Entries
     Console.WriteLine($"  {item.Key}: {item.Count():N0}");
 }
 
-internal sealed record ImportOptions(IReadOnlyList<InputSource> Inputs, string OutputPath, IReadOnlySet<string> IncludedKinds)
+internal sealed record ImportOptions(
+    IReadOnlyList<InputSource> Inputs,
+    string OutputPath,
+    IReadOnlySet<string> IncludedKinds,
+    string ReviewStatus)
 {
     public static ImportOptions Parse(string[] args)
     {
@@ -52,6 +56,7 @@ internal sealed record ImportOptions(IReadOnlyList<InputSource> Inputs, string O
         var inputPaths = new List<string>();
         var rawDirectory = "data/address-labels/raw";
         var includedKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var reviewStatus = "candidate";
 
         for (var index = 0; index < args.Length; index++)
         {
@@ -69,10 +74,19 @@ internal sealed record ImportOptions(IReadOnlyList<InputSource> Inputs, string O
                 case "--kind":
                     includedKinds.Add(RequireValue(args, ref index, "--kind"));
                     break;
+                case "--review-status":
+                    reviewStatus = RequireValue(args, ref index, "--review-status");
+                    break;
                 default:
                     inputPaths.Add(args[index]);
                     break;
             }
+        }
+
+        if (!reviewStatus.Equals("candidate", StringComparison.OrdinalIgnoreCase) &&
+            !reviewStatus.Equals("reviewed", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("--review-status must be candidate or reviewed.");
         }
 
         if (inputPaths.Count == 0)
@@ -81,7 +95,7 @@ internal sealed record ImportOptions(IReadOnlyList<InputSource> Inputs, string O
         }
 
         var inputs = inputPaths.Select(InputSource.FromPath).ToArray();
-        return new ImportOptions(inputs, outputPath, includedKinds);
+        return new ImportOptions(inputs, outputPath, includedKinds, reviewStatus.ToLowerInvariant());
     }
 
     private static string RequireValue(string[] args, ref int index, string optionName)
@@ -286,6 +300,14 @@ internal sealed class NameTagExtractor(ImportOptions options)
         }
 
         var seed = new CandidateSeed(
+            SchemaVersion: 1,
+            ReviewStatus: options.ReviewStatus,
+            ScopePolicy: new SeedScopePolicy(
+                Exchange: "global",
+                Bridge: "chainScoped",
+                DexRouter: "chainScoped",
+                Protocol: "chainScoped",
+                Treasury: "chainScoped"),
             GeneratedAtUtc: DateTimeOffset.UtcNow,
             Inputs: options.Inputs,
             Filters: new CandidateFilters(
@@ -523,11 +545,21 @@ internal sealed class ExtractionStats
 }
 
 internal sealed record CandidateSeed(
+    int SchemaVersion,
+    string ReviewStatus,
+    SeedScopePolicy ScopePolicy,
     DateTimeOffset GeneratedAtUtc,
     IReadOnlyList<InputSource> Inputs,
     CandidateFilters Filters,
     ExtractionStats Stats,
     IReadOnlyList<CandidateEntry> Entries);
+
+internal sealed record SeedScopePolicy(
+    string Exchange,
+    string Bridge,
+    string DexRouter,
+    string Protocol,
+    string Treasury);
 
 internal sealed record CandidateFilters(
     IReadOnlyList<string> ExcludedLabels,
@@ -559,7 +591,6 @@ internal enum CandidateKind
 
 [JsonSourceGenerationOptions(
     WriteIndented = true,
-    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(CandidateSeed))]
 internal sealed partial class SeedJsonContext : JsonSerializerContext;

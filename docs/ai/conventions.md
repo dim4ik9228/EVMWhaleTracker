@@ -45,6 +45,22 @@ Keep each decision compact:
 - Use normal implementation comments only for tricky private logic where XML comments would not help callers.
 - Do not add XML comments to generated EF migrations or routine test fixtures.
 
+## EF Core Migrations
+
+- Treat EF Core migrations as generated artifacts.
+- Create migrations with `dotnet ef migrations add`, not by hand-writing migration files.
+- Use this command shape from the repository root:
+
+```powershell
+dotnet ef migrations add MigrationName `
+  --project src/Infrastructure `
+  --startup-project src/Presentation.Telegram `
+  --context AppDbContext
+```
+
+- Manual edits to generated migrations should be rare, narrowly scoped, and called out explicitly.
+- After adding a migration, run `dotnet test EVMWhaleTracker.slnx`.
+
 ## Hygiene
 
 - Keep temporary scratch notes out of root.

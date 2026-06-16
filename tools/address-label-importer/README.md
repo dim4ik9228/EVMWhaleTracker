@@ -31,5 +31,7 @@ Optional arguments:
 ```powershell
 dotnet run tools/address-label-importer/ImportAddressNameTags.cs -- --raw-dir data/address-labels/raw --output data/address-labels/generated/custom.json
 dotnet run tools/address-label-importer/ImportAddressNameTags.cs -- --input data/address-labels/raw/accounts.bsc.json
-dotnet run tools/address-label-importer/ImportAddressNameTags.cs -- --kind Exchange --kind Bridge --output data/address-labels/address-labels.exchange-bridge.seed.json
+dotnet run tools/address-label-importer/ImportAddressNameTags.cs -- --kind Exchange --kind Bridge --review-status reviewed --output data/address-labels/address-labels.exchange-bridge.seed.json
 ```
+
+Generated files use `schemaVersion: 1`. The default `reviewStatus` is `candidate`; use `--review-status reviewed` only after the output has been reviewed and is intended for normal database import.

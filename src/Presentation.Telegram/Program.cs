@@ -1,6 +1,7 @@
 using Application.Messaging;
 using Application.Abstractions;
 using Infrastructure.Caching;
+using Infrastructure.AddressLabels;
 using Infrastructure.Blockchain;
 using Infrastructure.Ens;
 using Infrastructure.Persistence;
@@ -79,6 +80,7 @@ builder.Services.AddSingleton<IAddressLabelResolver, AddressLabelResolver>();
 builder.Services.AddHttpClient<IEnsReverseLookupProvider, EthereumEnsReverseLookupProvider>();
 builder.Services.AddSingleton<IPendingWalletAliasRequestStore, InMemoryPendingWalletAliasRequestStore>();
 builder.Services.AddScoped<ITelegramCommandProcessor, TelegramCommandProcessor>();
+builder.Services.AddSingleton<ITelegramNotificationEnricher, TelegramNotificationEnricher>();
 builder.Services.AddSingleton<ITelegramNotificationRenderer, TelegramNotificationRenderer>();
 builder.Services.AddHostedService<TrackedWalletCacheHydrationService>();
 builder.Services.AddHostedService<AddressLabelCacheHydrationService>();
@@ -86,6 +88,7 @@ builder.Services.AddHostedService<AddressLabelCacheHydrationService>();
 var enabledBlockchainNetworks = BlockchainNetworkOptionsResolver.Resolve(builder.Configuration);
 builder.Services.AddSingleton<IReadOnlyList<BlockchainNetworkOptions>>(enabledBlockchainNetworks);
 
+// Configure blockchain workers only
 if (enabledBlockchainNetworks.Count > 0)
 {
     builder.Services.AddSingleton<ITokenMetadataProvider, NethereumTokenMetadataProvider>();
@@ -111,6 +114,7 @@ else
     Console.WriteLine("No blockchain networks are configured. Blockchain workers are disabled.");
 }
 
+// Configure Telegram Bot
 var telegramSection = builder.Configuration.GetSection("TelegramBot");
 var botToken = telegramSection["BotToken"];
 if (!string.IsNullOrWhiteSpace(botToken))
@@ -136,38 +140,8 @@ using (var scope = app.Services.CreateScope())
 
 if (args.Length > 0 && string.Equals(args[0], "import-address-labels", StringComparison.OrdinalIgnoreCase))
 {
-    await RunAddressLabelImportAsync(app.Services, args);
+    await app.Services.RunAddressLabelImportAsync(args);
     return;
 }
 
 await app.RunAsync();
-
-static async Task RunAddressLabelImportAsync(IServiceProvider serviceProvider, string[] args)
-{
-    if (args.Length < 2)
-    {
-        Console.WriteLine("Usage: import-address-labels <json-path> [--dry-run]");
-        Environment.ExitCode = 1;
-        return;
-    }
-
-    var path = Path.GetFullPath(args[1]);
-    var dryRun = args.Any(arg => string.Equals(arg, "--dry-run", StringComparison.OrdinalIgnoreCase));
-
-    using var scope = serviceProvider.CreateScope();
-    var importer = scope.ServiceProvider.GetRequiredService<AddressLabelSeedImporter>();
-    var report = await importer.ImportAsync(path, dryRun, CancellationToken.None);
-
-    Console.WriteLine(dryRun ? "Address label import dry run complete." : "Address label import complete.");
-    Console.WriteLine($"Inserted: {report.Inserted}");
-    Console.WriteLine($"Updated: {report.Updated}");
-    Console.WriteLine($"Skipped: {report.Skipped}");
-    Console.WriteLine($"Invalid: {report.Invalid}");
-
-    foreach (var message in report.Messages)
-    {
-        Console.WriteLine(message);
-    }
-
-    Environment.ExitCode = report.Invalid == 0 ? 0 : 1;
-}

@@ -20,6 +20,13 @@ $seedPath = (Resolve-Path .\data\address-labels).Path
 docker compose run --rm --build -v "${seedPath}:/seed:ro" app import-address-labels /seed/address-labels.exchange-bridge.seed.json --dry-run
 ```
 
+Reviewed seeds import by default. Candidate files generated from raw explorer dumps are rejected unless you pass `--allow-candidate`:
+
+```powershell
+$seedPath = (Resolve-Path .\data\address-labels).Path
+docker compose run --rm --build -v "${seedPath}:/seed:ro" app import-address-labels /seed/generated/address-name-tags.seed.candidate.json --dry-run --allow-candidate
+```
+
 Verify imported row count directly in the Compose database:
 
 ```powershell
@@ -59,6 +66,15 @@ Ethereum tracking workers do not need to be enabled for ENS fallback; the resolv
 
 ```json
 {
+  "schemaVersion": 1,
+  "reviewStatus": "reviewed",
+  "scopePolicy": {
+    "exchange": "global",
+    "bridge": "chainScoped",
+    "dexRouter": "chainScoped",
+    "protocol": "chainScoped",
+    "treasury": "chainScoped"
+  },
   "entries": [
     {
       "address": "0xb38e8c17e38363af6ebdcb3dae12e0243582891d",
@@ -74,6 +90,8 @@ Ethereum tracking workers do not need to be enabled for ENS fallback; the resolv
 }
 ```
 
-Use `chain: null` for global EOA labels such as exchange wallets. Use a supported chain name, such as `Ethereum`, `Bsc`, `Base`, or `Arbitrum`, for chain-specific infrastructure like bridge contracts. The current scraped nameTag seed intentionally includes only exchanges and bridges.
+Use `reviewStatus: "reviewed"` for files that are safe to import into the normal database. Use `reviewStatus: "candidate"` for generated review material; the runtime importer requires `--allow-candidate` for those files.
+
+Use `chain: null` for global EOA labels such as exchange wallets. Use a supported chain name, such as `Ethereum`, `Bsc`, `Base`, or `Arbitrum`, for chain-specific infrastructure like bridge contracts. The importer rejects chain-scoped exchange entries and unscoped bridge/router/protocol/treasury entries. The current reviewed scraped nameTag seed intentionally includes only exchanges and bridges.
 
 Prefer curated Dune exports and official protocol deployment documentation. Explorer labels are useful review hints, but the runtime path should not scrape explorer pages.

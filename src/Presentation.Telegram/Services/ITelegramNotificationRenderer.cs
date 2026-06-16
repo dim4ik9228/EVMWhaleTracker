@@ -1,4 +1,3 @@
-using Application.Messaging;
 using Telegram.Bot.Types.Enums;
 
 namespace Presentation.Telegram.Services;
@@ -8,9 +7,7 @@ namespace Presentation.Telegram.Services;
 /// </summary>
 public interface ITelegramNotificationRenderer
 {
-    Task<TelegramRenderedMessage> RenderAsync(NotificationPayload payload, CancellationToken cancellationToken);
-
-    Task<TelegramRenderedMessage> RenderAsync(AggregatedNotificationPayload payload, CancellationToken cancellationToken);
+    TelegramRenderedMessage Render(EnrichedTelegramNotification notification);
 }
 
 /// <summary>

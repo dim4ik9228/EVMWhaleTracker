@@ -2,8 +2,6 @@ using System.Globalization;
 using System.Text;
 using Application.Abstractions;
 using Application.Messaging;
-using Domain.Common;
-using Domain.ValueObjects;
 using Telegram.Bot.Types.Enums;
 
 namespace Presentation.Telegram.Services;
@@ -11,9 +9,7 @@ namespace Presentation.Telegram.Services;
 /// <summary>
 /// Builds compact MarkdownV2 wallet-activity notifications with explorer links.
 /// </summary>
-public sealed class TelegramNotificationRenderer(
-    IChainMetadataProvider chainMetadataProvider,
-    IAddressLabelResolver addressLabelResolver)
+public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMetadataProvider)
     : ITelegramNotificationRenderer
 {
     private const int MaxRenderedTransferLines = 10;
@@ -23,36 +19,26 @@ public sealed class TelegramNotificationRenderer(
         '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
     ];
 
-    public Task<TelegramRenderedMessage> RenderAsync(NotificationPayload payload, CancellationToken cancellationToken)
-        => RenderAsync(AggregatedNotificationPayload.FromSingle(payload), cancellationToken);
-
-    public async Task<TelegramRenderedMessage> RenderAsync(
-        AggregatedNotificationPayload payload,
-        CancellationToken cancellationToken)
+    public TelegramRenderedMessage Render(EnrichedTelegramNotification notification)
     {
-        ArgumentNullException.ThrowIfNull(payload);
+        ArgumentNullException.ThrowIfNull(notification);
 
-        var chainMetadata = chainMetadataProvider.Get(payload.Chain);
-        var trackedWalletText = await ResolveTrackedWalletTextAsync(
-            payload.Chain,
-            payload.TrackedWalletAddress,
-            payload.TrackedWalletAlias,
-            cancellationToken);
+        var chainMetadata = chainMetadataProvider.Get(notification.Chain);
 
         var trackedWalletLink = Link(
-            trackedWalletText,
-            chainMetadata.GetAddressUrl(payload.TrackedWalletAddress));
+            notification.TrackedWalletDisplayText,
+            chainMetadata.GetAddressUrl(notification.TrackedWalletAddress));
 
-        var transactionLink = Link("Tx hash", chainMetadata.GetTransactionUrl(payload.TransactionHash));
+        var transactionLink = Link("Tx hash", chainMetadata.GetTransactionUrl(notification.TransactionHash));
         var lines = new List<string>();
-        foreach (var line in payload.Lines.Take(MaxRenderedTransferLines))
+        foreach (var line in notification.Lines.Take(MaxRenderedTransferLines))
         {
-            lines.Add(await RenderLineAsync(payload.Chain, line, chainMetadata, cancellationToken));
+            lines.Add(RenderLine(line, chainMetadata));
         }
 
-        if (payload.Lines.Count > MaxRenderedTransferLines)
+        if (notification.Lines.Count > MaxRenderedTransferLines)
         {
-            lines.Add(EscapeText($"...and {payload.Lines.Count - MaxRenderedTransferLines} more transfers"));
+            lines.Add(EscapeText($"...and {notification.Lines.Count - MaxRenderedTransferLines} more transfers"));
         }
 
         var text =
@@ -63,20 +49,13 @@ public sealed class TelegramNotificationRenderer(
         return new TelegramRenderedMessage(text, ParseMode.MarkdownV2);
     }
 
-    private async Task<string> RenderLineAsync(
-        SupportedChain chain,
-        NotificationTransferLine line,
-        ChainMetadata chainMetadata,
-        CancellationToken cancellationToken)
+    private static string RenderLine(
+        EnrichedTelegramTransferLine line,
+        ChainMetadata chainMetadata)
     {
-        var counterpartyText = await ResolveCounterpartyTextAsync(
-            chain,
-            line.CounterpartyAddress,
-            line.CounterpartyAlias,
-            cancellationToken);
         var counterparty = string.IsNullOrWhiteSpace(line.CounterpartyAddress)
             ? EscapeText("unknown")
-            : Link(counterpartyText, chainMetadata.GetAddressUrl(line.CounterpartyAddress));
+            : Link(line.CounterpartyDisplayText, chainMetadata.GetAddressUrl(line.CounterpartyAddress));
 
         var counterpartyRole = line.Operation == NotificationOperation.Received ? "From" : "To";
         var operationText = line.Operation switch
@@ -96,44 +75,6 @@ public sealed class TelegramNotificationRenderer(
             : string.Empty;
 
         return $"{EscapeText(operationText)}: {amount} {symbol}{usdPart} {EscapeText(counterpartyRole)}: {counterparty}";
-    }
-
-    private async Task<string> ResolveTrackedWalletTextAsync(
-        SupportedChain chain,
-        string address,
-        string? alias,
-        CancellationToken cancellationToken)
-    {
-        if (!string.IsNullOrWhiteSpace(alias))
-        {
-            return alias;
-        }
-
-        var addressResult = Address.Normalize(address);
-        return addressResult.IsSuccess
-            ? (await addressLabelResolver.ResolveAsync(chain, addressResult.Value, cancellationToken)).DisplayText
-            : ShortAddress(address);
-    }
-
-    private async Task<string> ResolveCounterpartyTextAsync(
-        SupportedChain chain,
-        string? address,
-        string? alias,
-        CancellationToken cancellationToken)
-    {
-        var addressResult = Address.Normalize(address);
-        if (addressResult.IsSuccess)
-        {
-            var resolution = await addressLabelResolver.ResolveAsync(chain, addressResult.Value, cancellationToken);
-            if (resolution.IsLabeled)
-            {
-                return resolution.DisplayText;
-            }
-        }
-
-        return string.IsNullOrWhiteSpace(alias)
-            ? ShortAddress(address)
-            : alias;
     }
 
     private static string Link(string visibleText, string url)
@@ -162,18 +103,6 @@ public sealed class TelegramNotificationRenderer(
         => value
             .Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace(")", "\\)", StringComparison.Ordinal);
-
-    private static string ShortAddress(string? address)
-    {
-        if (string.IsNullOrWhiteSpace(address))
-        {
-            return "unknown";
-        }
-
-        return address.Length <= 12
-            ? address
-            : $"{address[..6]}...{address[^4..]}";
-    }
 
     private static string FormatAmount(decimal value)
         => value.ToString("0.########", CultureInfo.InvariantCulture);

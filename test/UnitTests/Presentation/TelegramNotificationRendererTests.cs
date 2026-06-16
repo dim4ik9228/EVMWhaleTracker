@@ -1,10 +1,6 @@
-using Application.Abstractions;
 using Application.Messaging;
 using Domain.Common;
-using Domain.Entities;
-using Domain.ValueObjects;
 using Infrastructure.Blockchain;
-using Infrastructure.Caching;
 using Presentation.Telegram.Services;
 using Telegram.Bot.Types.Enums;
 
@@ -13,27 +9,31 @@ namespace UnitTests.Presentation;
 public sealed class TelegramNotificationRendererTests
 {
     [Fact]
-    public async Task RenderAsync_EscapesMarkdownV2_AndUsesCompactLinkedLayout()
+    public void Render_EscapesMarkdownV2_AndUsesCompactLinkedLayout()
     {
         var renderer = CreateRenderer();
-        var payload = new NotificationPayload(
+        var notification = new EnrichedTelegramNotification(
             TelegramUserId: 7777,
             Chain: SupportedChain.Bsc,
-            Operation: NotificationOperation.Received,
             TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",
-            TrackedWalletAlias: "debabki.eth",
-            CounterpartyAddress: "0x1111111111111111111111111111111111111111",
-            CounterpartyAlias: "from_wallet[1]",
+            TrackedWalletDisplayText: "debabki.eth",
             TransactionHash: "0xtxhash",
-            AssetSymbol: "USDT",
-            AssetName: "Tether USD",
-            TokenContractAddress: "0x55d398326f99059fF775485246999027B3197955",
-            Amount: 252.39m,
-            UsdValue: 252m,
             BlockNumber: 100,
-            BlockTimestampUtc: DateTimeOffset.UtcNow);
+            BlockTimestampUtc: DateTimeOffset.UtcNow,
+            Lines:
+            [
+                new EnrichedTelegramTransferLine(
+                    Operation: NotificationOperation.Received,
+                    CounterpartyAddress: "0x1111111111111111111111111111111111111111",
+                    CounterpartyDisplayText: "from_wallet[1]",
+                    AssetSymbol: "USDT",
+                    AssetName: "Tether USD",
+                    TokenContractAddress: "0x55d398326f99059fF775485246999027B3197955",
+                    Amount: 252.39m,
+                    UsdValue: 252m)
+            ]);
 
-        var rendered = await renderer.RenderAsync(payload, CancellationToken.None);
+        var rendered = renderer.Render(notification);
 
         Assert.Equal(ParseMode.MarkdownV2, rendered.ParseMode);
         Assert.Contains("[debabki\\.eth](https://bscscan.com/address/0x52908400098527886E0F7030069857D2E4169EE7) \\| BNB", rendered.Text);
@@ -42,59 +42,47 @@ public sealed class TelegramNotificationRendererTests
     }
 
     [Fact]
-    public async Task RenderAsync_KeepsNativeAssetSymbolUnlinked()
+    public void Render_KeepsNativeAssetSymbolUnlinked()
     {
         var renderer = CreateRenderer();
-        var payload = new NotificationPayload(
-            TelegramUserId: 7777,
-            Chain: SupportedChain.Bsc,
-            Operation: NotificationOperation.Received,
-            TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",
-            TrackedWalletAlias: null,
-            CounterpartyAddress: "0x1111111111111111111111111111111111111111",
-            CounterpartyAlias: null,
-            TransactionHash: "0xtxhash",
-            AssetSymbol: "BNB",
-            AssetName: "BNB",
-            TokenContractAddress: null,
-            Amount: 1.25m,
-            UsdValue: 750m,
-            BlockNumber: 100,
-            BlockTimestampUtc: DateTimeOffset.UtcNow);
+        var notification = CreateSingleLineNotification(
+            assetSymbol: "BNB",
+            tokenContractAddress: null,
+            counterpartyDisplayText: "0x1111...1111");
 
-        var rendered = await renderer.RenderAsync(payload, CancellationToken.None);
+        var rendered = renderer.Render(notification);
 
         Assert.Contains("1\\.25 BNB", rendered.Text);
         Assert.DoesNotContain("/token/", rendered.Text);
     }
 
     [Fact]
-    public async Task RenderAsync_RendersMultipleTransferLinesForAggregatedNotification()
+    public void Render_RendersMultipleTransferLinesForAggregatedNotification()
     {
         var renderer = CreateRenderer();
-        var payload = new AggregatedNotificationPayload(
+        var notification = new EnrichedTelegramNotification(
             TelegramUserId: 7777,
             Chain: SupportedChain.Bsc,
             TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",
-            TrackedWalletAlias: "debabki.eth",
+            TrackedWalletDisplayText: "debabki.eth",
             TransactionHash: "0xswap",
             BlockNumber: 100,
             BlockTimestampUtc: DateTimeOffset.UtcNow,
             Lines:
             [
-                new NotificationTransferLine(
+                new EnrichedTelegramTransferLine(
                     Operation: NotificationOperation.Received,
                     CounterpartyAddress: "0x1111111111111111111111111111111111111111",
-                    CounterpartyAlias: null,
+                    CounterpartyDisplayText: "0x1111...1111",
                     AssetSymbol: "ESPORTS",
                     AssetName: "Esports",
                     TokenContractAddress: "0x2222222222222222222222222222222222222222",
                     Amount: 62877m,
                     UsdValue: 2876m),
-                new NotificationTransferLine(
+                new EnrichedTelegramTransferLine(
                     Operation: NotificationOperation.Sent,
                     CounterpartyAddress: "0x3333333333333333333333333333333333333333",
-                    CounterpartyAlias: "Dex Router (OKX)",
+                    CounterpartyDisplayText: "Dex Router (OKX)",
                     AssetSymbol: "USDT",
                     AssetName: "Tether USD",
                     TokenContractAddress: "0x55d398326f99059fF775485246999027B3197955",
@@ -102,7 +90,7 @@ public sealed class TelegramNotificationRendererTests
                     UsdValue: 2754m)
             ]);
 
-        var rendered = await renderer.RenderAsync(payload, CancellationToken.None);
+        var rendered = renderer.Render(notification);
 
         Assert.Contains("Received: 62877 [ESPORTS](https://bscscan.com/token/0x2222222222222222222222222222222222222222) \\(\\~$2876\\) From: [0x1111\\.\\.\\.1111](https://bscscan.com/address/0x1111111111111111111111111111111111111111)", rendered.Text);
         Assert.Contains("Sent: 2758 [USDT](https://bscscan.com/token/0x55d398326f99059fF775485246999027B3197955) \\(\\~$2754\\) To: [Dex Router \\(OKX\\)](https://bscscan.com/address/0x3333333333333333333333333333333333333333)", rendered.Text);
@@ -110,65 +98,45 @@ public sealed class TelegramNotificationRendererTests
     }
 
     [Fact]
-    public async Task RenderAsync_UsesAddressLabelsForTrackedWalletFallbackAndCounterparties()
+    public void Render_UsesEnrichedTrackedWalletAndCounterpartyText()
     {
-        using var cache = new InMemoryAddressLabelCacheService();
-        cache.ReplaceAll(
-        [
-            CreateLabel("0x52908400098527886E0F7030069857D2E4169EE7", null, "vitalik.eth"),
-            CreateLabel("0x1111111111111111111111111111111111111111", SupportedChain.Bsc, "MEXC")
-        ]);
+        var renderer = CreateRenderer();
+        var notification = CreateSingleLineNotification(
+            trackedWalletDisplayText: "vitalik.eth",
+            counterpartyDisplayText: "MEXC");
 
-        var renderer = CreateRenderer(cache);
-        var payload = new NotificationPayload(
-            TelegramUserId: 7777,
-            Chain: SupportedChain.Bsc,
-            Operation: NotificationOperation.Received,
-            TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",
-            TrackedWalletAlias: null,
-            CounterpartyAddress: "0x1111111111111111111111111111111111111111",
-            CounterpartyAlias: "raw alias",
-            TransactionHash: "0xtxhash",
-            AssetSymbol: "BNB",
-            AssetName: "BNB",
-            TokenContractAddress: null,
-            Amount: 1.25m,
-            UsdValue: 750m,
-            BlockNumber: 100,
-            BlockTimestampUtc: DateTimeOffset.UtcNow);
-
-        var rendered = await renderer.RenderAsync(payload, CancellationToken.None);
+        var rendered = renderer.Render(notification);
 
         Assert.Contains("[vitalik\\.eth](https://bscscan.com/address/0x52908400098527886E0F7030069857D2E4169EE7) \\| BNB", rendered.Text);
         Assert.Contains("From: [MEXC](https://bscscan.com/address/0x1111111111111111111111111111111111111111)", rendered.Text);
-        Assert.DoesNotContain("raw alias", rendered.Text);
     }
 
-    private static TelegramNotificationRenderer CreateRenderer(InMemoryAddressLabelCacheService? cache = null)
-    {
-        cache ??= new InMemoryAddressLabelCacheService();
-        return new TelegramNotificationRenderer(
-            new StaticChainMetadataProvider(),
-            new AddressLabelResolver(cache, new FakeEnsReverseLookupProvider()));
-    }
+    private static TelegramNotificationRenderer CreateRenderer()
+        => new(new StaticChainMetadataProvider());
 
-    private static AddressLabelCacheEntry CreateLabel(string address, SupportedChain? chain, string label)
-    {
-        var addressResult = Address.Normalize(address);
-        Assert.True(addressResult.IsSuccess);
-
-        return new AddressLabelCacheEntry(
-            addressResult.Value,
-            chain,
-            label,
-            AddressLabelKind.Exchange,
-            AddressLabelSource.SeedFile,
-            Priority: 100);
-    }
-
-    private sealed class FakeEnsReverseLookupProvider : IEnsReverseLookupProvider
-    {
-        public Task<string?> ResolveNameAsync(Address address, CancellationToken cancellationToken)
-            => Task.FromResult<string?>(null);
-    }
+    private static EnrichedTelegramNotification CreateSingleLineNotification(
+        string trackedWalletDisplayText = "debabki.eth",
+        string counterpartyDisplayText = "from_wallet",
+        string assetSymbol = "BNB",
+        string? tokenContractAddress = null)
+        => new(
+            TelegramUserId: 7777,
+            Chain: SupportedChain.Bsc,
+            TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",
+            TrackedWalletDisplayText: trackedWalletDisplayText,
+            TransactionHash: "0xtxhash",
+            BlockNumber: 100,
+            BlockTimestampUtc: DateTimeOffset.UtcNow,
+            Lines:
+            [
+                new EnrichedTelegramTransferLine(
+                    Operation: NotificationOperation.Received,
+                    CounterpartyAddress: "0x1111111111111111111111111111111111111111",
+                    CounterpartyDisplayText: counterpartyDisplayText,
+                    AssetSymbol: assetSymbol,
+                    AssetName: assetSymbol,
+                    TokenContractAddress: tokenContractAddress,
+                    Amount: 1.25m,
+                    UsdValue: 750m)
+            ]);
 }

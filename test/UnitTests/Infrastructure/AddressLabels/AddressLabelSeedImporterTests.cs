@@ -1,11 +1,11 @@
 using Domain.Common;
+using Infrastructure.AddressLabels;
 using Infrastructure.Caching;
 using Infrastructure.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Presentation.Telegram.Services;
 
-namespace UnitTests.Presentation;
+namespace UnitTests.Infrastructure.AddressLabels;
 
 public sealed class AddressLabelSeedImporterTests
 {
@@ -18,6 +18,12 @@ public sealed class AddressLabelSeedImporterTests
             seedPath,
             """
             {
+              "schemaVersion": 1,
+              "reviewStatus": "reviewed",
+              "scopePolicy": {
+                "exchange": "global",
+                "bridge": "chainScoped"
+              },
               "entries": [
                 {
                   "address": "0x1111111111111111111111111111111111111111",
@@ -41,7 +47,8 @@ public sealed class AddressLabelSeedImporterTests
                   "address": "bad",
                   "chain": "Bsc",
                   "nameTag": "Bad",
-                  "kind": "Exchange"
+                  "kind": "Exchange",
+                  "sourceReference": "test"
                 }
               ]
             }
@@ -49,7 +56,7 @@ public sealed class AddressLabelSeedImporterTests
 
         try
         {
-            var report = await fixture.Importer.ImportAsync(seedPath, dryRun: false, CancellationToken.None);
+            var report = await fixture.Importer.ImportAsync(seedPath, dryRun: false, allowCandidate: false, CancellationToken.None);
             var enabledLabels = await fixture.Repository.GetEnabledAsync(CancellationToken.None);
             var exchangeAddress = global::Domain.ValueObjects.Address.Normalize("0x1111111111111111111111111111111111111111").Value;
             var baseAddress = global::Domain.ValueObjects.Address.Normalize("0x2222222222222222222222222222222222222222").Value;
@@ -76,22 +83,11 @@ public sealed class AddressLabelSeedImporterTests
     {
         await using var fixture = await ImportFixture.CreateAsync();
         var seedPath = Path.Combine(Path.GetTempPath(), $"address-labels-{Guid.NewGuid():N}.json");
-        await File.WriteAllTextAsync(
-            seedPath,
-            """
-            [
-              {
-                "address": "0x1111111111111111111111111111111111111111",
-                "nameTag": "MEXC",
-                "kind": "Exchange",
-                "sourceReference": "test"
-              }
-            ]
-            """);
+        await File.WriteAllTextAsync(seedPath, CreateSeed(reviewStatus: "reviewed"));
 
         try
         {
-            var report = await fixture.Importer.ImportAsync(seedPath, dryRun: true, CancellationToken.None);
+            var report = await fixture.Importer.ImportAsync(seedPath, dryRun: true, allowCandidate: false, CancellationToken.None);
             var enabledLabels = await fixture.Repository.GetEnabledAsync(CancellationToken.None);
 
             Assert.Equal(1, report.Inserted);
@@ -102,6 +98,113 @@ public sealed class AddressLabelSeedImporterTests
             File.Delete(seedPath);
         }
     }
+
+    [Fact]
+    public async Task ImportAsync_RejectsCandidateSeedByDefault()
+    {
+        await using var fixture = await ImportFixture.CreateAsync();
+        var seedPath = Path.Combine(Path.GetTempPath(), $"address-labels-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(seedPath, CreateSeed(reviewStatus: "candidate"));
+
+        try
+        {
+            var report = await fixture.Importer.ImportAsync(seedPath, dryRun: false, allowCandidate: false, CancellationToken.None);
+            var enabledLabels = await fixture.Repository.GetEnabledAsync(CancellationToken.None);
+
+            Assert.Equal(1, report.Invalid);
+            Assert.Contains(report.Messages, message => message.Contains("--allow-candidate", StringComparison.OrdinalIgnoreCase));
+            Assert.Empty(enabledLabels);
+        }
+        finally
+        {
+            File.Delete(seedPath);
+        }
+    }
+
+    [Fact]
+    public async Task ImportAsync_AllowsCandidateSeedWhenFlagIsSet()
+    {
+        await using var fixture = await ImportFixture.CreateAsync();
+        var seedPath = Path.Combine(Path.GetTempPath(), $"address-labels-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(seedPath, CreateSeed(reviewStatus: "candidate"));
+
+        try
+        {
+            var report = await fixture.Importer.ImportAsync(seedPath, dryRun: false, allowCandidate: true, CancellationToken.None);
+            var enabledLabels = await fixture.Repository.GetEnabledAsync(CancellationToken.None);
+
+            Assert.Equal(1, report.Inserted);
+            Assert.Equal(0, report.Invalid);
+            Assert.Single(enabledLabels);
+        }
+        finally
+        {
+            File.Delete(seedPath);
+        }
+    }
+
+    [Fact]
+    public async Task ImportAsync_RejectsChainScopedExchange()
+    {
+        await using var fixture = await ImportFixture.CreateAsync();
+        var seedPath = Path.Combine(Path.GetTempPath(), $"address-labels-{Guid.NewGuid():N}.json");
+        await File.WriteAllTextAsync(
+            seedPath,
+            """
+            {
+              "schemaVersion": 1,
+              "reviewStatus": "reviewed",
+              "scopePolicy": {
+                "exchange": "global",
+                "bridge": "chainScoped"
+              },
+              "entries": [
+                {
+                  "address": "0x1111111111111111111111111111111111111111",
+                  "chain": "Base",
+                  "nameTag": "MEXC",
+                  "kind": "Exchange",
+                  "sourceReference": "test"
+                }
+              ]
+            }
+            """);
+
+        try
+        {
+            var report = await fixture.Importer.ImportAsync(seedPath, dryRun: false, allowCandidate: false, CancellationToken.None);
+            var enabledLabels = await fixture.Repository.GetEnabledAsync(CancellationToken.None);
+
+            Assert.Equal(1, report.Invalid);
+            Assert.Contains(report.Messages, message => message.Contains("global", StringComparison.OrdinalIgnoreCase));
+            Assert.Empty(enabledLabels);
+        }
+        finally
+        {
+            File.Delete(seedPath);
+        }
+    }
+
+    private static string CreateSeed(string reviewStatus)
+        => $$"""
+           {
+             "schemaVersion": 1,
+             "reviewStatus": "{{reviewStatus}}",
+             "scopePolicy": {
+               "exchange": "global",
+               "bridge": "chainScoped"
+             },
+             "entries": [
+               {
+                 "address": "0x1111111111111111111111111111111111111111",
+                 "chain": null,
+                 "nameTag": "MEXC",
+                 "kind": "Exchange",
+                 "sourceReference": "test"
+               }
+             ]
+           }
+           """;
 
     private sealed class ImportFixture : IAsyncDisposable
     {

@@ -5,5 +5,7 @@
 test/
 README.md
 PROJECT_ROADMAP.md
+data/address-labels/raw/
+data/address-labels/generated/
 *.user
 *.suo

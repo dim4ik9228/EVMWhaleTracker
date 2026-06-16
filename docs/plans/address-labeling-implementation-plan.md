@@ -309,16 +309,46 @@ Recommended source order for initial population:
 
 Add a seed/import file that can be reviewed in git without secrets:
 
-```csv
-address,chain,label,kind,source,source_reference,priority,is_enabled
-0x9bb6...,,"MEXC",Exchange,Dune,"labels.addresses:bnb",100,true
-0x...,Bsc,"PancakeSwap Router",DexRouter,OfficialProjectDocs,"https://...",100,true
+```json
+{
+  "schemaVersion": 1,
+  "reviewStatus": "reviewed",
+  "scopePolicy": {
+    "exchange": "global",
+    "bridge": "chainScoped",
+    "dexRouter": "chainScoped",
+    "protocol": "chainScoped",
+    "treasury": "chainScoped"
+  },
+  "entries": [
+    {
+      "address": "0x9bb6...",
+      "chain": null,
+      "nameTag": "MEXC",
+      "kind": "Exchange",
+      "source": "dune",
+      "sourceReference": "labels.addresses:bnb",
+      "priority": 100,
+      "isEnabled": true
+    },
+    {
+      "address": "0x...",
+      "chain": "Bsc",
+      "nameTag": "PancakeSwap Router",
+      "kind": "DexRouter",
+      "source": "officialProjectDocs",
+      "sourceReference": "https://...",
+      "priority": 100,
+      "isEnabled": true
+    }
+  ]
+}
 ```
 
 Recommended location:
 
 ```text
-data/address-labels/address-labels.seed.csv
+data/address-labels/address-labels.exchange-bridge.seed.json
 ```
 
 If the seed list grows large, keep it out of EF migrations and use an import command/tool instead.
@@ -328,13 +358,8 @@ If the seed list grows large, keep it out of EF migrations and use an import com
 Add a small import command/script:
 
 ```powershell
-dotnet run --project src/Presentation.Telegram -- import-address-labels data/address-labels/address-labels.seed.csv
-```
-
-Alternative if command parsing is not ready:
-
-```powershell
-dotnet run --project tools/AddressLabelImporter
+$seedPath = (Resolve-Path .\data\address-labels).Path
+docker compose run --rm --build -v "${seedPath}:/seed:ro" app import-address-labels /seed/address-labels.exchange-bridge.seed.json
 ```
 
 Import behavior:
@@ -345,6 +370,8 @@ Import behavior:
 - Validate label is non-empty and short enough for Telegram.
 - Preserve source and source reference.
 - Disable labels if `is_enabled = false`.
+- Reject candidate generated seed files unless `--allow-candidate` is passed.
+- Enforce scope rules: exchanges are global; bridges, routers, protocols, and treasuries are chain-scoped.
 - Report counts: inserted, updated, skipped, invalid.
 
 ## Notification Rendering Changes
@@ -472,17 +499,17 @@ Acceptance criteria:
 
 Tasks:
 
-- Add CSV seed file format.
-- Add import command/tool.
+- Add reviewed JSON seed file format.
+- Add import command/tool in the app startup path.
 - Add dry-run mode if cheap.
-- Add a small initial seed list:
-  - exchanges observed in testing
-  - common routers/bridges encountered in notifications
-- Document how to export Dune labels into the seed CSV.
+- Add candidate/reviewed separation for generated explorer nameTag data.
+- Add a reviewed exchange and bridge seed list.
+- Document how to generate candidate data from raw explorer label dumps.
 
 Acceptance criteria:
 
-- A CSV file can insert/update labels.
+- A reviewed JSON file can insert/update labels.
+- A candidate JSON file is rejected unless explicitly allowed.
 - Bad rows are reported without aborting the whole import.
 - Imported labels appear in notifications after cache refresh or app restart.
 
@@ -505,7 +532,7 @@ Add focused tests:
 Tasks:
 
 - Update README with label import basics.
-- Add seed CSV format docs.
+- Add seed JSON format docs.
 - Add source-quality guidance:
   - prefer Dune/imported curated data
   - prefer official protocol deployment docs for contract/router labels
@@ -528,8 +555,8 @@ Implement only:
 2. Startup in-memory cache.
 3. Cache-backed resolver with global and chain-specific labels.
 4. Notification rendering integration.
-5. CSV import tool.
-6. Small manually reviewed seed file.
+5. JSON import command.
+6. Reviewed exchange and bridge seed file.
 
 Then add ENS fallback as the second pass if the DB/static labels work cleanly.
 
