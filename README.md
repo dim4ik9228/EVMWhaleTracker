@@ -49,6 +49,7 @@ On Ethereum cache misses, the bot can also use ENS reverse lookup through the co
 - Tracking pipeline architecture: `docs/architecture/tracking-pipeline.md`
 - Architecture decisions: `docs/decisions/`
 - Implementation plans: `docs/plans/`
+  - Inline notification editing: `docs/plans/inline-notification-editing-implementation-plan.md`
 
 ## Tracking Mode
 

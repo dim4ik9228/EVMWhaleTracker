@@ -455,10 +455,10 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [x] Docker Compose setup
 - [ ] Deployment configuration
 - [x] End-to-end MVP flow validated on a live chain
-- [ ] Support multiple chains simultaneously
+- [x] Support multiple chains simultaneously
 - [x] Redesign Telegram notifications to match a drops-style bot message layout
 - [x] Transaction-level notification aggregation for multi-transfer DeFi activity
-- [ ] Auto-detected wallet labels from chain scans
+- [x] Auto-detected wallet labels from chain scans
 - [x] Transaction explorer links in notifications
 - [ ] Inline notification edit menu for alias, minimum value, and chain preferences
 
