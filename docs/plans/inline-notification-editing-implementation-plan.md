@@ -23,7 +23,7 @@ Add Drops-style inline editing for tracked wallets directly from Telegram notifi
 - Incoming/outgoing/token filter editing.
 - Admin-only label editing.
 - Rich pagination/search across wallets.
-- Web app or deep-link settings pages.
+- Web app settings pages.
 
 ## UX Shape
 
@@ -37,17 +37,21 @@ Received: 3,309.511 H (~$2,389,798) From: Gate.io
 Tx hash
 ```
 
-Telegram Bot API does not support clickable spans inside message text. The actual click target must be an inline keyboard button attached to the message. For visual parity, we can keep `| ✏️` in the rendered header and attach a compact inline button:
+The pencil is not an inline keyboard button. Render it as a MarkdownV2 hyperlink that points to the bot's deep-link `/start` URL:
 
-```text
-[ ✏️ Edit ]
+```markdown
+H whale · ETH | [✏️](https://t.me/EvmWhaleTrackerBot?start=edit_wallet_4f7c0e...)
 ```
 
-Callback target:
+Telegram clients show this as a small clickable pencil in the notification text. When the user taps it, Telegram sends the bot a normal private-chat message:
 
 ```text
-tw:v1:e:{walletId}
+/start edit_wallet_4f7c0e...
 ```
+
+The bot should handle that `/start` payload, immediately delete the user-generated `/start ...` message when possible, and leave only the bot's settings menu response visible.
+
+The deep link should use a compact wallet token rather than the raw wallet address. A `Guid` in `N` format is 32 characters and fits comfortably after an `edit_wallet_` prefix.
 
 ### Wallet Settings Menu
 
@@ -136,30 +140,36 @@ Buttons:
 
 On confirm, remove the tracked wallet and refresh cache.
 
-## Callback Data
+## Deep-Link And Callback Data
 
-Telegram callback data is limited to 64 bytes. Prefer wallet ids instead of raw addresses in callback payloads.
+Telegram deep-link payloads and callback data are both size-constrained. Prefer wallet ids instead of raw addresses. Use `Guid.ToString("N")` to avoid hyphens and keep payloads compact.
 
-Suggested callback format:
+Suggested notification deep-link payload:
 
 ```text
-tw:v1:e:{walletId}              // open edit overview
-tw:v1:n:{walletId}              // open networks menu
-tw:v1:nt:{walletId}:{chainId}:1 // enable chain
-tw:v1:nt:{walletId}:{chainId}:0 // disable chain
-tw:v1:r:{walletId}              // prompt rename
-tw:v1:m:{walletId}              // prompt minimum USD
-tw:v1:d:{walletId}              // delete confirmation
-tw:v1:dc:{walletId}             // delete confirmed
-tw:v1:b:{walletId}              // back/close
+edit_wallet_{walletId:N}
 ```
 
-Every callback handler must:
+Suggested menu callback format:
 
-- Use `CallbackQuery.From.Id` as the Telegram user id.
+```text
+tw:v1:n:{walletId:N}              // open networks menu
+tw:v1:nt:{walletId:N}:{chainId}:1 // enable chain
+tw:v1:nt:{walletId:N}:{chainId}:0 // disable chain
+tw:v1:r:{walletId:N}              // prompt rename
+tw:v1:m:{walletId:N}              // prompt minimum USD
+tw:v1:d:{walletId:N}              // delete confirmation
+tw:v1:dc:{walletId:N}             // delete confirmed
+tw:v1:b:{walletId:N}              // back/close
+```
+
+Every deep-link or callback handler must:
+
+- Use `Message.From.Id` or `CallbackQuery.From.Id` as the Telegram user id.
 - Load the wallet by `walletId`.
-- Verify `wallet.UserId == callback.From.Id`.
-- Answer the callback query to stop Telegram's loading spinner.
+- Verify `wallet.UserId == user id`.
+- Answer callback queries to stop Telegram's loading spinner.
+- Delete the generated `/start edit_wallet_*` user message when handling a deep link, ignoring delete failures.
 - Return a generic "wallet not found" response if the wallet is missing or owned by another user.
 
 ## Application Changes
@@ -220,7 +230,7 @@ Current receiver allows only message updates:
 AllowedUpdates = new[] { UpdateType.Message }
 ```
 
-Change to:
+Keep message updates because deep links arrive as `/start <payload>` messages, and add callback query updates for menu buttons:
 
 ```csharp
 AllowedUpdates = new[] { UpdateType.Message, UpdateType.CallbackQuery }
@@ -228,8 +238,27 @@ AllowedUpdates = new[] { UpdateType.Message, UpdateType.CallbackQuery }
 
 `TelegramCommandUpdateHandler` should branch:
 
-- `Message.Text` -> existing command/pending-text flow.
+- `Message.Text` -> existing command/pending-text/deep-link flow.
 - `CallbackQuery` -> new callback flow.
+
+For `/start edit_wallet_{walletId}` responses, call `DeleteMessage` on the user-generated `/start` message after processing. This should be best-effort; the menu should still render if deletion fails.
+
+### Deep-Link Processor
+
+The existing command processor already handles `/start`. Extend it to parse supported start payloads:
+
+```text
+/start edit_wallet_{walletId:N}
+```
+
+Responsibilities:
+
+- Parse the wallet id.
+- Verify ownership.
+- Render the tracked-wallet overview menu.
+- Return response metadata indicating that the source `/start` message should be deleted.
+
+Keep this parsing separate from normal help text so `/start` without a payload still returns the welcome/help response.
 
 ### Callback Processor
 
@@ -247,7 +276,7 @@ Responsibilities:
 - Parse callback data.
 - Dispatch MediatR commands.
 - Render overview/network/delete-confirmation menus.
-- Decide whether to send a new message, edit an existing message, delete a menu message, or answer with an alert.
+- Decide whether to edit an existing menu message, delete a menu message, or answer with an alert.
 
 Keep callback parsing in a small parser class with unit tests. Callback payloads are compact and easy to break with stringly typed code.
 
@@ -311,14 +340,18 @@ Important behavior to preserve:
 
 ### Phase 1: Callback Plumbing
 
+- Add deep-link payload parsing for `/start edit_wallet_{walletId}`.
+- Add best-effort deletion of the generated `/start` message.
 - Add callback update support in `TelegramUpdateReceiverWorker`.
 - Add callback request/response contracts.
-- Add callback parser and tests.
+- Add deep-link and callback parser tests.
 - Add callback processor skeleton.
 - Ensure callback ownership validation exists before any mutation.
 
 Acceptance criteria:
 
+- Tapping a pencil hyperlink opens the wallet overview menu.
+- The generated `/start edit_wallet_*` user message is removed when Telegram permits it.
 - Bot receives callback queries.
 - Unknown/invalid callback data is answered safely.
 - No wallet can be edited by a different Telegram user.
@@ -357,12 +390,12 @@ Acceptance criteria:
 
 - Add `TrackedWalletId` to notification payloads.
 - Populate wallet id from matching cache entries.
-- Extend `TelegramRenderedMessage` or dispatcher send path with optional inline keyboard.
-- Attach the edit button to notifications.
+- Add bot username/deep-link configuration if the configured `ITelegramBotClient` cannot expose it cheaply.
+- Render the pencil as a MarkdownV2 link to `https://t.me/{botUsername}?start=edit_wallet_{walletId:N}`.
 
 Acceptance criteria:
 
-- Every wallet notification has an edit button.
+- Every wallet notification has a linked pencil.
 - Clicking it opens settings for the correct tracked wallet.
 
 ### Phase 5: Pending Text Flows
@@ -383,6 +416,7 @@ Acceptance criteria:
 Add focused coverage for:
 
 - Callback data parser.
+- Deep-link start payload parser.
 - Ownership checks.
 - Overview menu rendering.
 - Networks menu rendering with empty-enabled-chains-as-all.
@@ -390,20 +424,20 @@ Add focused coverage for:
 - Rename pending text flow.
 - Minimum USD pending text flow.
 - Delete confirmation and confirmed delete.
-- Notification dispatcher sends edit reply markup.
+- Notification renderer emits a pencil deep link.
 
 ## Open Questions
 
 - Should `Back` close the menu or return to a wallet list once a richer `/list` UI exists?
 - Should delete confirmation edit the same menu message or send a fresh confirmation message?
-- Should notification edit buttons be shown on every notification forever, or only when the bot can still edit/respond meaningfully?
+- Should notification deep-link pencils be shown on every notification forever, or only when the bot can still respond meaningfully?
 - Should we add a short "settings updated" toast via `AnswerCallbackQuery` instead of sending extra messages after button taps?
 
 ## Recommended MVP Cut
 
 Build only:
 
-1. Edit button on notifications.
+1. Linked pencil on notifications.
 2. Overview menu.
 3. Networks menu for configured enabled networks.
 4. Rename prompt.
