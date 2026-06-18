@@ -18,6 +18,7 @@ public interface ITelegramNotificationEnricher
 /// </summary>
 public sealed record EnrichedTelegramNotification(
     long TelegramUserId,
+    Guid TrackedWalletId,
     SupportedChain Chain,
     string TrackedWalletAddress,
     string TrackedWalletDisplayText,

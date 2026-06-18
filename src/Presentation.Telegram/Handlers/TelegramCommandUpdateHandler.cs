@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Presentation.Telegram.Commands;
+using Presentation.Telegram.Commands.Callbacks;
 using Presentation.Telegram.Services;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
@@ -22,6 +23,12 @@ public sealed class TelegramCommandUpdateHandler(
     {
         ArgumentNullException.ThrowIfNull(botClient);
         ArgumentNullException.ThrowIfNull(update);
+
+        if (update.CallbackQuery is { } callbackQuery)
+        {
+            await HandleCallbackQueryAsync(botClient, update, callbackQuery, cancellationToken);
+            return;
+        }
 
         if (update.Message?.Text is not { } messageText)
         {
@@ -64,8 +71,18 @@ public sealed class TelegramCommandUpdateHandler(
             await botClient.SendMessage(
                 chatId: update.Message.Chat.Id,
                 text: response.Text,
-                parseMode: ParseMode.Html,
+                parseMode: response.ParseMode,
+                replyMarkup: response.ReplyMarkup,
                 cancellationToken: cancellationToken);
+
+            if (response.DeleteSourceMessage)
+            {
+                await DeleteMessageBestEffortAsync(
+                    botClient,
+                    update.Message.Chat.Id,
+                    update.Message.MessageId,
+                    cancellationToken);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -74,6 +91,134 @@ public sealed class TelegramCommandUpdateHandler(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to send Telegram command response for update {UpdateId}.", update.Id);
+        }
+    }
+
+    private async Task HandleCallbackQueryAsync(
+        ITelegramBotClient botClient,
+        Update update,
+        CallbackQuery callbackQuery,
+        CancellationToken cancellationToken)
+    {
+        if (callbackQuery.Message is not { } message || callbackQuery.Data is null)
+        {
+            await AnswerCallbackBestEffortAsync(botClient, callbackQuery.Id, "This menu is no longer available.", true, cancellationToken);
+            return;
+        }
+
+        using var scope = serviceScopeFactory.CreateScope();
+        var callbackProcessor = scope.ServiceProvider.GetRequiredService<ITelegramCallbackProcessor>();
+
+        TelegramCallbackResponse? response;
+        try
+        {
+            response = await callbackProcessor.ProcessAsync(
+                new TelegramCallbackRequest(
+                    TelegramUserId: callbackQuery.From.Id,
+                    TelegramUsername: callbackQuery.From.Username,
+                    ChatId: message.Chat.Id,
+                    MessageId: message.MessageId,
+                    Data: callbackQuery.Data,
+                    IsPrivateChat: message.Chat.Type == ChatType.Private),
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to process Telegram callback update {UpdateId}.", update.Id);
+            await AnswerCallbackBestEffortAsync(botClient, callbackQuery.Id, "Something went wrong.", true, cancellationToken);
+            return;
+        }
+
+        if (response is null)
+        {
+            await AnswerCallbackBestEffortAsync(botClient, callbackQuery.Id, "This menu is no longer available.", true, cancellationToken);
+            return;
+        }
+
+        try
+        {
+            await rateLimiter.WaitAsync(cancellationToken);
+
+            switch (response.MessageAction)
+            {
+                case TelegramCallbackMessageAction.EditMessage when response.Text is not null:
+                    await botClient.EditMessageText(
+                        chatId: message.Chat.Id,
+                        messageId: message.MessageId,
+                        text: response.Text,
+                        parseMode: response.ParseMode,
+                        replyMarkup: response.ReplyMarkup,
+                        cancellationToken: cancellationToken);
+                    break;
+                case TelegramCallbackMessageAction.DeleteMessage:
+                    await DeleteMessageBestEffortAsync(
+                        botClient,
+                        message.Chat.Id,
+                        message.MessageId,
+                        cancellationToken);
+                    break;
+            }
+
+            await AnswerCallbackBestEffortAsync(
+                botClient,
+                callbackQuery.Id,
+                response.AnswerText,
+                response.ShowAlert,
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Expected when the host is shutting down.
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to apply Telegram callback response for update {UpdateId}.", update.Id);
+            await AnswerCallbackBestEffortAsync(botClient, callbackQuery.Id, "Something went wrong.", true, cancellationToken);
+        }
+    }
+
+    private static async Task DeleteMessageBestEffortAsync(
+        ITelegramBotClient botClient,
+        ChatId chatId,
+        int messageId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await botClient.DeleteMessage(chatId, messageId, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Telegram may deny deleting older or user-authored messages; the menu should still work.
+        }
+    }
+
+    private static async Task AnswerCallbackBestEffortAsync(
+        ITelegramBotClient botClient,
+        string callbackQueryId,
+        string? text,
+        bool showAlert,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await botClient.AnswerCallbackQuery(
+                callbackQueryId,
+                text,
+                showAlert: showAlert,
+                cancellationToken: cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Best-effort spinner cleanup.
         }
     }
 

@@ -48,6 +48,7 @@ public sealed class TelegramNotificationEnricher(IAddressLabelResolver addressLa
 
         return new EnrichedTelegramNotification(
             payload.TelegramUserId,
+            payload.TrackedWalletId,
             payload.Chain,
             payload.TrackedWalletAddress,
             trackedWalletText,

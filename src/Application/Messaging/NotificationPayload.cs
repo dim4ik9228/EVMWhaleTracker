@@ -1,3 +1,5 @@
+using Domain.Common;
+
 namespace Application.Messaging;
 
 /// <summary>
@@ -5,7 +7,8 @@ namespace Application.Messaging;
 /// </summary>
 public sealed record NotificationPayload(
     long TelegramUserId,
-    Domain.Common.SupportedChain Chain,
+    Guid TrackedWalletId,
+    SupportedChain Chain,
     NotificationOperation Operation,
     string TrackedWalletAddress,
     string? TrackedWalletAlias,
@@ -25,7 +28,8 @@ public sealed record NotificationPayload(
 /// </summary>
 public sealed record AggregatedNotificationPayload(
     long TelegramUserId,
-    Domain.Common.SupportedChain Chain,
+    Guid TrackedWalletId,
+    SupportedChain Chain,
     string TrackedWalletAddress,
     string? TrackedWalletAlias,
     string TransactionHash,
@@ -36,6 +40,7 @@ public sealed record AggregatedNotificationPayload(
     public static AggregatedNotificationPayload FromSingle(NotificationPayload payload)
         => new(
             payload.TelegramUserId,
+            payload.TrackedWalletId,
             payload.Chain,
             payload.TrackedWalletAddress,
             payload.TrackedWalletAlias,

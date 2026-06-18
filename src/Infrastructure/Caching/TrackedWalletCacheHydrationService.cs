@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Presentation.Telegram.Services;
+namespace Infrastructure.Caching;
 
 /// <summary>
 /// Loads persisted tracked wallets into the hot-path in-memory cache during startup.
@@ -24,6 +24,9 @@ public sealed class TrackedWalletCacheHydrationService : IHostedService
         _logger = logger;
     }
 
+    /// <summary>
+    /// Loads persisted tracked wallets into the in-memory lookup used by blockchain workers.
+    /// </summary>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         using var scope = _serviceScopeFactory.CreateScope();
@@ -36,6 +39,9 @@ public sealed class TrackedWalletCacheHydrationService : IHostedService
         _logger.LogInformation("Hydrated tracked wallet cache with {TrackedWalletCount} wallets.", trackedWallets.Count);
     }
 
+    /// <summary>
+    /// No-op stop hook; cache lifetime is managed by dependency injection.
+    /// </summary>
     public Task StopAsync(CancellationToken cancellationToken)
         => Task.CompletedTask;
 }

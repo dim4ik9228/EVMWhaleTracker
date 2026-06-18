@@ -49,6 +49,7 @@ public sealed class NotificationAggregationWorkerTests
     private static NotificationPayload CreatePayload(string transactionHash, decimal amount)
         => new(
             TelegramUserId: 7777,
+            TrackedWalletId: Guid.Parse("11111111-1111-1111-1111-111111111111"),
             Chain: SupportedChain.Bsc,
             Operation: NotificationOperation.Sent,
             TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",

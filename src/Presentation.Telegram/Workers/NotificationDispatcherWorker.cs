@@ -3,7 +3,6 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Presentation.Telegram.Services;
 using Telegram.Bot;
-using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using System.Collections.Concurrent;
 
@@ -22,6 +21,9 @@ public sealed class NotificationDispatcherWorker : BackgroundService
     private readonly TelegramNotificationSendRetryPolicy _sendRetryPolicy = new();
     private readonly ConcurrentDictionary<long, SemaphoreSlim> _chatLimiters = new();
     private readonly ILogger<NotificationDispatcherWorker> _logger;
+    private string? _resolvedBotUsername;
+    private bool _botUsernameResolutionAttempted;
+
     public NotificationDispatcherWorker(
         OnChainPipelineChannels channels,
         ITelegramBotClient telegramBotClient,
@@ -63,7 +65,8 @@ public sealed class NotificationDispatcherWorker : BackgroundService
                 await chatLimiter.WaitAsync(stoppingToken);
                 chatLimiterAcquired = true;
                 var enrichedPayload = await _notificationEnricher.EnrichAsync(payload, stoppingToken);
-                var renderedMessage = _notificationRenderer.Render(enrichedPayload);
+                var botUsername = await ResolveBotUsernameAsync(stoppingToken);
+                var renderedMessage = _notificationRenderer.Render(enrichedPayload, botUsername);
                 var sent = await SendWithRetryAsync(payload, renderedMessage, stoppingToken);
                 if (sent)
                 {
@@ -95,6 +98,38 @@ public sealed class NotificationDispatcherWorker : BackgroundService
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         await base.StopAsync(cancellationToken);
+    }
+
+    private async Task<string?> ResolveBotUsernameAsync(CancellationToken cancellationToken)
+    {
+        if (_botUsernameResolutionAttempted)
+        {
+            return _resolvedBotUsername;
+        }
+
+        try
+        {
+            var botUser = await _telegramBotClient.GetMe(cancellationToken);
+            _resolvedBotUsername = botUser.Username;
+            if (string.IsNullOrWhiteSpace(_resolvedBotUsername))
+            {
+                _logger.LogWarning("Telegram getMe did not return a bot username; notification edit links will be omitted.");
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not resolve Telegram bot username via getMe; notification edit links will be omitted.");
+        }
+        finally
+        {
+            _botUsernameResolutionAttempted = true;
+        }
+
+        return _resolvedBotUsername;
     }
 
     private Task<bool> SendWithRetryAsync(

@@ -2,11 +2,25 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Attach to EVMWhaleTracker (Compose)",
-      "type": "docker",
+      "name": "Attach to EVMWhaleTracker (Compose Debug)",
+      "type": "coreclr",
       "request": "attach",
-      "platform": "netCore",
-      "containerName": "evmwhaletracker-app"
+      "processId": "${command:pickRemoteProcess}",
+      "preLaunchTask": "compose: debug up",
+      "pipeTransport": {
+        "pipeProgram": "docker",
+        "pipeArgs": [
+          "exec",
+          "-i",
+          "evmwhaletracker-app"
+        ],
+        "debuggerPath": "/vsdbg/vsdbg",
+        "pipeCwd": "${workspaceFolder}",
+        "quoteArgs": false
+      },
+      "sourceFileMap": {
+        "/src": "${workspaceFolder}"
+      }
     }
   ]
 }

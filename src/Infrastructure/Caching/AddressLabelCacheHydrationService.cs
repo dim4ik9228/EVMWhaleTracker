@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Presentation.Telegram.Services;
+namespace Infrastructure.Caching;
 
 /// <summary>
 /// Loads enabled address labels into memory during startup.
@@ -13,6 +13,9 @@ public sealed class AddressLabelCacheHydrationService(
     ILogger<AddressLabelCacheHydrationService> logger)
     : IHostedService
 {
+    /// <summary>
+    /// Loads enabled address labels from persistence into the in-memory resolver cache.
+    /// </summary>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         using var scope = serviceScopeFactory.CreateScope();
@@ -25,6 +28,9 @@ public sealed class AddressLabelCacheHydrationService(
         logger.LogInformation("Hydrated address label cache with {AddressLabelCount} labels.", labels.Count);
     }
 
+    /// <summary>
+    /// No-op stop hook; cache lifetime is managed by dependency injection.
+    /// </summary>
     public Task StopAsync(CancellationToken cancellationToken)
         => Task.CompletedTask;
 }

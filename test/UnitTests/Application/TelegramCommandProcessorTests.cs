@@ -2,8 +2,14 @@ using Application.TrackedWallets;
 using Application.Abstractions;
 using Domain.Common;
 using Domain.ValueObjects;
+using Infrastructure.Blockchain;
 using MediatR;
 using Presentation.Telegram.Commands;
+using Presentation.Telegram.Commands.Menus;
+using Presentation.Telegram.Commands.PendingActions;
+using Presentation.Telegram.Commands.StartPayloads;
+using Presentation.Telegram.Commands.Wallets;
+using Presentation.Telegram.Services;
 
 namespace UnitTests.Application;
 
@@ -63,7 +69,7 @@ public sealed class TelegramCommandProcessorTests
     public async Task ProcessAsync_AddCommand_WithoutAlias_AsksForAliasAndUsesNextMessage()
     {
         var sender = new FakeSender();
-        var pendingAliasRequests = new InMemoryPendingWalletAliasRequestStore();
+        var pendingAliasRequests = new InMemoryPendingTelegramActionStore();
         var processor = CreateProcessor(sender, pendingAliasRequests);
 
         var prompt = await processor.ProcessAsync(
@@ -93,7 +99,7 @@ public sealed class TelegramCommandProcessorTests
     public async Task ProcessAsync_AddCommand_WithoutAlias_UsesEnsNameWhenAvailable()
     {
         var sender = new FakeSender();
-        var pendingAliasRequests = new InMemoryPendingWalletAliasRequestStore();
+        var pendingAliasRequests = new InMemoryPendingTelegramActionStore();
         var ensProvider = new FakeEnsReverseLookupProvider("vitalik.eth");
         var processor = CreateProcessor(sender, pendingAliasRequests, ensProvider);
 
@@ -181,12 +187,36 @@ public sealed class TelegramCommandProcessorTests
 
     private static TelegramCommandProcessor CreateProcessor(
         FakeSender sender,
-        IPendingWalletAliasRequestStore? pendingAliasRequests = null,
+        IPendingTelegramActionStore? pendingAliasRequests = null,
         IEnsReverseLookupProvider? ensReverseLookupProvider = null)
-        => new(
+    {
+        var pendingActions = pendingAliasRequests ?? new InMemoryPendingTelegramActionStore();
+        var chainMetadataProvider = new StaticChainMetadataProvider();
+        IReadOnlyList<BlockchainNetworkOptions> configuredNetworks =
+        [
+            new BlockchainNetworkOptions { Chain = SupportedChain.Bsc, Enabled = true }
+        ];
+        var menuResponseFactory = new TrackedWalletMenuResponseFactory(
+            new TrackedWalletMenuRenderer(),
+            chainMetadataProvider,
+            configuredNetworks);
+        var walletCommandProcessor = new TelegramWalletCommandProcessor(
             sender,
-            pendingAliasRequests ?? new InMemoryPendingWalletAliasRequestStore(),
+            pendingActions,
             ensReverseLookupProvider ?? new FakeEnsReverseLookupProvider());
+        var pendingActionProcessor = new TelegramPendingActionProcessor(
+            sender,
+            pendingActions,
+            walletCommandProcessor,
+            menuResponseFactory);
+        var startPayloadProcessor = new TelegramStartPayloadProcessor(sender, menuResponseFactory);
+
+        return new TelegramCommandProcessor(
+            pendingActions,
+            pendingActionProcessor,
+            startPayloadProcessor,
+            walletCommandProcessor);
+    }
 
     private sealed class FakeEnsReverseLookupProvider(string? name = null) : IEnsReverseLookupProvider
     {
@@ -237,6 +267,9 @@ public sealed class TelegramCommandProcessorTests
                 AddTrackedWalletCommand => AddResult,
                 ListTrackedWalletsQuery => ListResult,
                 RemoveTrackedWalletCommand => RemoveResult,
+                GetTrackedWalletQuery => Result<TrackedWalletDetails>.Success(AddResult.Value),
+                UpdateTrackedWalletAliasCommand => AddResult,
+                UpdateTrackedWalletMinimumUsdValueCommand => AddResult,
                 _ => throw new NotSupportedException($"Unsupported request type {request.GetType().Name}.")
             };
 

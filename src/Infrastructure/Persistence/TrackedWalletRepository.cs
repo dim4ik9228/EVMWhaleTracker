@@ -43,12 +43,10 @@ public sealed class TrackedWalletRepository : ITrackedWalletRepository
 
     public Task<TrackedWallet?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
         => _dbContext.TrackedWallets
-            .AsNoTracking()
             .FirstOrDefaultAsync(wallet => wallet.Id == id, cancellationToken);
 
     public Task<TrackedWallet?> GetByUserIdAndAddressAsync(long userId, Address address, CancellationToken cancellationToken)
         => _dbContext.TrackedWallets
-            .AsNoTracking()
             .FirstOrDefaultAsync(wallet => wallet.UserId == userId && wallet.Address == address, cancellationToken);
 
     public Task AddAsync(TrackedWallet trackedWallet, CancellationToken cancellationToken)

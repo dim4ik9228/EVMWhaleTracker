@@ -43,7 +43,7 @@ public sealed class TelegramUpdateReceiverWorker : BackgroundService
     {
         var receiverOptions = new ReceiverOptions
         {
-            AllowedUpdates = new[] { UpdateType.Message }
+            AllowedUpdates = new[] { UpdateType.Message, UpdateType.CallbackQuery }
         };
 
         _telegramBotClient.StartReceiving(_updateHandler, receiverOptions, stoppingToken);

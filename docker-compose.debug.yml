@@ -1,0 +1,8 @@
+services:
+  app:
+    build:
+      target: debug
+      args:
+        BUILD_CONFIGURATION: Debug
+    environment:
+      DOTNET_ENVIRONMENT: Development

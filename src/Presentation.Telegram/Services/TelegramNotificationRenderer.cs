@@ -19,7 +19,10 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
         '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
     ];
 
-    public TelegramRenderedMessage Render(EnrichedTelegramNotification notification)
+    /// <summary>
+    /// Renders the activity notification with explorer links and, when available, a Telegram edit deep link.
+    /// </summary>
+    public TelegramRenderedMessage Render(EnrichedTelegramNotification notification, string? botUsername = null)
     {
         ArgumentNullException.ThrowIfNull(notification);
 
@@ -41,8 +44,14 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
             lines.Add(EscapeText($"...and {notification.Lines.Count - MaxRenderedTransferLines} more transfers"));
         }
 
+        var header = $"{trackedWalletLink} \\| {EscapeText(chainMetadata.ShortName)}";
+        if (!string.IsNullOrWhiteSpace(botUsername))
+        {
+            header += $" \\| {Link("✏️", BuildEditDeepLink(botUsername, notification.TrackedWalletId))}";
+        }
+
         var text =
-            $"{trackedWalletLink} \\| {EscapeText(chainMetadata.ShortName)}\n" +
+            $"{header}\n" +
             $"{string.Join('\n', lines)}\n" +
             transactionLink;
 
@@ -103,6 +112,12 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
         => value
             .Replace("\\", "\\\\", StringComparison.Ordinal)
             .Replace(")", "\\)", StringComparison.Ordinal);
+
+    private static string BuildEditDeepLink(string botUsername, Guid trackedWalletId)
+    {
+        var normalizedBotUsername = botUsername.Trim().TrimStart('@');
+        return $"https://t.me/{Uri.EscapeDataString(normalizedBotUsername)}?start=edit_wallet_{trackedWalletId:N}";
+    }
 
     private static string FormatAmount(decimal value)
         => value.ToString("0.########", CultureInfo.InvariantCulture);

@@ -14,6 +14,7 @@ public sealed class TelegramNotificationRendererTests
         var renderer = CreateRenderer();
         var notification = new EnrichedTelegramNotification(
             TelegramUserId: 7777,
+            TrackedWalletId: Guid.Parse("11111111-1111-1111-1111-111111111111"),
             Chain: SupportedChain.Bsc,
             TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",
             TrackedWalletDisplayText: "debabki.eth",
@@ -33,10 +34,11 @@ public sealed class TelegramNotificationRendererTests
                     UsdValue: 252m)
             ]);
 
-        var rendered = renderer.Render(notification);
+        var rendered = renderer.Render(notification, "EvmWhaleTrackerBot");
 
         Assert.Equal(ParseMode.MarkdownV2, rendered.ParseMode);
         Assert.Contains("[debabki\\.eth](https://bscscan.com/address/0x52908400098527886E0F7030069857D2E4169EE7) \\| BNB", rendered.Text);
+        Assert.Contains("[✏️](https://t.me/EvmWhaleTrackerBot?start=edit_wallet_11111111111111111111111111111111)", rendered.Text);
         Assert.Contains("Received: 252\\.39 [USDT](https://bscscan.com/token/0x55d398326f99059fF775485246999027B3197955) \\(\\~$252\\) From: [from\\_wallet\\[1\\]](https://bscscan.com/address/0x1111111111111111111111111111111111111111)", rendered.Text);
         Assert.Contains("[Tx hash](https://bscscan.com/tx/0xtxhash)", rendered.Text);
     }
@@ -62,6 +64,7 @@ public sealed class TelegramNotificationRendererTests
         var renderer = CreateRenderer();
         var notification = new EnrichedTelegramNotification(
             TelegramUserId: 7777,
+            TrackedWalletId: Guid.Parse("11111111-1111-1111-1111-111111111111"),
             Chain: SupportedChain.Bsc,
             TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",
             TrackedWalletDisplayText: "debabki.eth",
@@ -121,6 +124,7 @@ public sealed class TelegramNotificationRendererTests
         string? tokenContractAddress = null)
         => new(
             TelegramUserId: 7777,
+            TrackedWalletId: Guid.Parse("11111111-1111-1111-1111-111111111111"),
             Chain: SupportedChain.Bsc,
             TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",
             TrackedWalletDisplayText: trackedWalletDisplayText,

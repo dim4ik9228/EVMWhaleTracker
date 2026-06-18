@@ -102,6 +102,7 @@ public sealed class TelegramNotificationEnricherTests
         string? counterpartyAlias = null)
         => new(
             TelegramUserId: 7777,
+            TrackedWalletId: Guid.Parse("11111111-1111-1111-1111-111111111111"),
             Chain: chain,
             Operation: NotificationOperation.Received,
             TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",

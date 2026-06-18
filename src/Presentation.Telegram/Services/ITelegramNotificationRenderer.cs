@@ -7,7 +7,10 @@ namespace Presentation.Telegram.Services;
 /// </summary>
 public interface ITelegramNotificationRenderer
 {
-    TelegramRenderedMessage Render(EnrichedTelegramNotification notification);
+    /// <summary>
+    /// Renders an enriched notification and optionally adds an edit deep link for the resolved bot username.
+    /// </summary>
+    TelegramRenderedMessage Render(EnrichedTelegramNotification notification, string? botUsername = null);
 }
 
 /// <summary>

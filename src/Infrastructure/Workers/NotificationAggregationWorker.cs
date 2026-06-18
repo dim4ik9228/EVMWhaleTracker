@@ -143,9 +143,10 @@ public sealed class NotificationAggregationWorker : BackgroundService
 
     private sealed class PendingNotification
     {
-        private readonly object _sync = new();
+        private readonly Lock _sync = new();
         private readonly List<NotificationTransferLine> _lines = [];
         private readonly long _telegramUserId;
+        private readonly Guid _trackedWalletId;
         private readonly Domain.Common.SupportedChain _chain;
         private readonly string _trackedWalletAddress;
         private readonly string? _trackedWalletAlias;
@@ -158,6 +159,7 @@ public sealed class NotificationAggregationWorker : BackgroundService
         public PendingNotification(NotificationPayload firstPayload, TimeSpan debounceInterval)
         {
             _telegramUserId = firstPayload.TelegramUserId;
+            _trackedWalletId = firstPayload.TrackedWalletId;
             _chain = firstPayload.Chain;
             _trackedWalletAddress = firstPayload.TrackedWalletAddress;
             _trackedWalletAlias = firstPayload.TrackedWalletAlias;
@@ -204,6 +206,7 @@ public sealed class NotificationAggregationWorker : BackgroundService
             {
                 return new AggregatedNotificationPayload(
                     _telegramUserId,
+                    _trackedWalletId,
                     _chain,
                     _trackedWalletAddress,
                     _trackedWalletAlias,

@@ -137,6 +137,7 @@ public sealed class WalletTrackerWorker : BackgroundService
 
             var payload = new NotificationPayload(
                 TelegramUserId: entry.TelegramUserId,
+                TrackedWalletId: entry.Id,
                 Chain: block.Chain,
                 Operation: operation,
                 TrackedWalletAddress: trackedAddress.Value,
@@ -256,6 +257,7 @@ public sealed class WalletTrackerWorker : BackgroundService
 
             var payload = new NotificationPayload(
                 TelegramUserId: entry.TelegramUserId,
+                TrackedWalletId: entry.Id,
                 Chain: block.Chain,
                 Operation: operation,
                 TrackedWalletAddress: trackedAddress.Value,
