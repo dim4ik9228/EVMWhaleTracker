@@ -4,6 +4,7 @@ using Domain.ValueObjects;
 using MediatR;
 using Presentation.Telegram.Commands;
 using Presentation.Telegram.Commands.PendingActions;
+using Presentation.Telegram.Services;
 
 namespace Presentation.Telegram.Commands.Wallets;
 
@@ -13,7 +14,8 @@ namespace Presentation.Telegram.Commands.Wallets;
 public sealed class TelegramWalletCommandProcessor(
     ISender sender,
     IPendingTelegramActionStore pendingActions,
-    IEnsReverseLookupProvider ensReverseLookupProvider)
+    IEnsReverseLookupProvider ensReverseLookupProvider,
+    ITelegramBotUsernameProvider botUsernameProvider)
     : ITelegramWalletCommandProcessor
 {
     private const string AliasPrompt = "Please give a name to this wallet";
@@ -64,22 +66,16 @@ public sealed class TelegramWalletCommandProcessor(
             return new TelegramCommandResponse("You are not tracking any wallets yet.");
         }
 
+        var botUsername = await botUsernameProvider.GetBotUsernameAsync(cancellationToken);
         var lines = new List<string>
         {
-            "Tracked wallets:"
+            "Your Wallets Watchlist:",
+            string.Empty
         };
 
-        for (var index = 0; index < result.Value.Count; index++)
+        foreach (var wallet in result.Value)
         {
-            var wallet = result.Value[index];
-            lines.Add(
-                $"""
-                {index + 1}. <code>{TelegramCommandText.HtmlEncode(wallet.Address)}</code>
-                   Alias: <code>{TelegramCommandText.HtmlEncode(wallet.Alias ?? "none")}</code>
-                   Minimum USD value: <code>{TelegramCommandText.FormatDecimal(wallet.MinimumUsdValue)}</code>
-                   Incoming: <code>{TelegramCommandText.FormatOnOff(wallet.TrackIncomingTransfers)}</code>, Outgoing: <code>{TelegramCommandText.FormatOnOff(wallet.TrackOutgoingTransfers)}</code>, Token: <code>{TelegramCommandText.FormatOnOff(wallet.TrackTokenTransfers)}</code>
-                   Enabled chains: <code>{TelegramCommandText.HtmlEncode(TelegramCommandText.FormatChains(wallet.EnabledChains))}</code>
-                """.TrimEnd());
+            lines.Add(FormatWatchlistLine(wallet, botUsername));
         }
 
         return new TelegramCommandResponse(string.Join(Environment.NewLine, lines));
@@ -135,17 +131,14 @@ public sealed class TelegramWalletCommandProcessor(
         }
 
         var wallet = result.Value;
+        var botUsername = await botUsernameProvider.GetBotUsernameAsync(cancellationToken);
         var responseText =
             $"""
-            Tracked wallet added successfully.
+            Added to watchlist ✅
 
-            Alias: <code>{TelegramCommandText.HtmlEncode(wallet.Alias ?? "none")}</code>
-            Address: <code>{TelegramCommandText.HtmlEncode(wallet.Address)}</code>
-            Minimum USD value: <code>{TelegramCommandText.FormatDecimal(wallet.MinimumUsdValue)}</code>
-            Incoming transfers: <code>{TelegramCommandText.FormatOnOff(wallet.TrackIncomingTransfers)}</code>
-            Outgoing transfers: <code>{TelegramCommandText.FormatOnOff(wallet.TrackOutgoingTransfers)}</code>
-            Token transfers: <code>{TelegramCommandText.FormatOnOff(wallet.TrackTokenTransfers)}</code>
-            Enabled chains: <code>{TelegramCommandText.HtmlEncode(TelegramCommandText.FormatChains(wallet.EnabledChains))}</code>
+            {FormatWatchlistLine(wallet, botUsername)}
+            Minimum USD: <code>${TelegramCommandText.FormatDecimal(wallet.MinimumUsdValue)}</code>
+            Networks: <code>{TelegramCommandText.HtmlEncode(TelegramCommandText.FormatChains(wallet.EnabledChains))}</code>
             """;
 
         return new TelegramCommandResponse(responseText);
@@ -194,5 +187,30 @@ public sealed class TelegramWalletCommandProcessor(
 
         rawAddress = parts[0];
         return true;
+    }
+
+    private static string FormatWatchlistLine(TrackedWalletDetails wallet, string? botUsername)
+    {
+        var displayName = string.IsNullOrWhiteSpace(wallet.Alias)
+            ? ShortAddress(wallet.Address)
+            : wallet.Alias;
+        var line =
+            $"<b>{TelegramCommandText.HtmlEncode(displayName)}</b> · <code>{TelegramCommandText.HtmlEncode(ShortAddress(wallet.Address))}</code>";
+
+        if (!string.IsNullOrWhiteSpace(botUsername))
+        {
+            line += $" | <a href=\"{BuildEditDeepLink(botUsername, wallet.Id)}\">✏️</a>";
+        }
+
+        return line;
+    }
+
+    private static string ShortAddress(string address)
+        => address.Length <= 8 ? address : address[..8];
+
+    private static string BuildEditDeepLink(string botUsername, Guid walletId)
+    {
+        var normalizedBotUsername = botUsername.Trim().TrimStart('@');
+        return $"https://t.me/{Uri.EscapeDataString(normalizedBotUsername)}?start=edit_wallet_{walletId:N}";
     }
 }

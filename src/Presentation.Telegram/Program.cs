@@ -131,6 +131,7 @@ var botToken = telegramSection["BotToken"];
 if (!string.IsNullOrWhiteSpace(botToken))
 {
     builder.Services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(botToken));
+    builder.Services.AddSingleton<ITelegramBotUsernameProvider, TelegramBotUsernameProvider>();
     builder.Services.AddSingleton<TelegramCommandUpdateHandler>();
     builder.Services.AddHostedService<TelegramUpdateReceiverWorker>();
     builder.Services.AddHostedService<NotificationDispatcherWorker>();

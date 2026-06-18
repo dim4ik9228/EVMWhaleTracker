@@ -55,7 +55,7 @@ public sealed class TelegramCommandProcessorTests
             CancellationToken.None);
 
         Assert.NotNull(response);
-        Assert.Contains("Tracked wallet added successfully", response!.Text);
+        Assert.Contains("Added to watchlist", response!.Text);
         Assert.Single(sender.SentRequests);
 
         var request = Assert.IsType<AddTrackedWalletCommand>(sender.SentRequests[0]);
@@ -86,7 +86,7 @@ public sealed class TelegramCommandProcessorTests
             CancellationToken.None);
 
         Assert.NotNull(response);
-        Assert.Contains("Tracked wallet added successfully", response!.Text);
+        Assert.Contains("Added to watchlist", response!.Text);
         Assert.Single(sender.SentRequests);
         Assert.False(pendingAliasRequests.TryGet(7777, out _));
 
@@ -108,7 +108,7 @@ public sealed class TelegramCommandProcessorTests
             CancellationToken.None);
 
         Assert.NotNull(response);
-        Assert.Contains("Tracked wallet added successfully", response!.Text);
+        Assert.Contains("Added to watchlist", response!.Text);
         Assert.Single(sender.SentRequests);
         Assert.False(pendingAliasRequests.TryGet(7777, out _));
         Assert.Equal(1, ensProvider.Calls);
@@ -121,12 +121,13 @@ public sealed class TelegramCommandProcessorTests
     [Fact]
     public async Task ProcessAsync_ListCommand_FormatsReturnedWallets()
     {
+        var walletId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         var sender = new FakeSender
         {
             ListResult = Result<IReadOnlyList<TrackedWalletDetails>>.Success(
                 [
                     new TrackedWalletDetails(
-                        Guid.NewGuid(),
+                        walletId,
                         "0x52908400098527886E0F7030069857D2E4169EE7",
                         7777,
                         2m,
@@ -146,11 +147,10 @@ public sealed class TelegramCommandProcessorTests
             CancellationToken.None);
 
         Assert.NotNull(response);
-        Assert.Contains("Tracked wallets:", response!.Text);
-        Assert.Contains("Alias:", response.Text);
-        Assert.Contains("Minimum USD value:", response.Text);
-        Assert.Contains("Outgoing: <code>off</code>", response.Text);
-        Assert.Contains("Enabled chains:", response.Text);
+        Assert.Contains("Your Wallets Watchlist:", response!.Text);
+        Assert.Contains("<b>MEXC Hot Wallet</b> · <code>0x529084</code>", response.Text);
+        Assert.Contains($"https://t.me/EvmWhaleTrackerBot?start=edit_wallet_{walletId:N}", response.Text);
+        Assert.DoesNotContain("Minimum USD value:", response.Text);
     }
 
     [Fact]
@@ -203,7 +203,8 @@ public sealed class TelegramCommandProcessorTests
         var walletCommandProcessor = new TelegramWalletCommandProcessor(
             sender,
             pendingActions,
-            ensReverseLookupProvider ?? new FakeEnsReverseLookupProvider());
+            ensReverseLookupProvider ?? new FakeEnsReverseLookupProvider(),
+            new FakeTelegramBotUsernameProvider());
         var pendingActionProcessor = new TelegramPendingActionProcessor(
             sender,
             pendingActions,
@@ -227,6 +228,12 @@ public sealed class TelegramCommandProcessorTests
             Calls++;
             return Task.FromResult(name);
         }
+    }
+
+    private sealed class FakeTelegramBotUsernameProvider : ITelegramBotUsernameProvider
+    {
+        public Task<string?> GetBotUsernameAsync(CancellationToken cancellationToken)
+            => Task.FromResult<string?>("EvmWhaleTrackerBot");
     }
 
     private sealed class FakeSender : ISender
@@ -289,3 +296,4 @@ public sealed class TelegramCommandProcessorTests
             => throw new NotSupportedException();
     }
 }
+
