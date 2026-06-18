@@ -1,8 +1,8 @@
 # EVMWhaleTracker Project Roadmap
 
-This document describes the current state of the project and the remaining work needed to turn it into a working MVP Telegram bot for tracking EVM wallet activity.
+This document describes the current state of the project and the remaining work needed to harden the MVP Telegram bot for tracking EVM wallet activity.
 
-The short version: the background processing pipeline exists, but the product-facing pieces are still missing. We can ingest blocks, match them against an in-memory address cache, and dispatch Telegram notifications. What we do not yet have is persistent tracked-wallet storage, Telegram commands, startup cache hydration, or deployment wiring.
+The short version: the end-to-end MVP is in place. The bot can persist tracked wallets, hydrate and refresh the in-memory cache, process live chain activity, render enriched Telegram notifications, and let users manage wallet settings from Telegram through commands, `/list`, and notification-linked edit menus.
 
 Status: the end-to-end MVP flow is now implemented and validated on a real chain.
 
@@ -29,6 +29,7 @@ The `Application` project contains:
 - `RawBlockData`, `RawTransactionData`, `RawLogData`, and `NotificationPayload` message contracts.
 - Strongly typed in-memory channels through `OnChainPipelineChannels`.
 - Cache abstractions for tracked addresses and tracked wallets.
+- MediatR commands and queries for adding, listing, removing, and editing tracked wallets.
 
 The `Infrastructure` project contains:
 
@@ -36,6 +37,7 @@ The `Infrastructure` project contains:
 - Nethereum-backed block source.
 - `WalletTrackerWorker`.
 - `InMemoryCacheService`.
+- EF Core persistence, repositories, migrations, and startup/cache hydration.
 
 The `Presentation.Telegram` project contains:
 
@@ -43,6 +45,9 @@ The `Presentation.Telegram` project contains:
 - Telegram bot options.
 - `NotificationDispatcherWorker`.
 - Global Telegram rate limiter.
+- Telegram command receiving/routing for `/start`, `/help`, `/add`, `/list`, and `/remove`.
+- Notification rendering with labels, explorer links, USD values, aggregation, and edit deep links.
+- Inline tracked-wallet menus for alias, minimum USD, enabled networks, and deletion.
 
 The `test/UnitTests` project contains coverage for:
 
@@ -50,22 +55,17 @@ The `test/UnitTests` project contains coverage for:
 - Tracked wallet aggregate behavior.
 - In-memory cache behavior.
 - Wallet tracker worker matching `FromAddress` and `ToAddress`.
+- Application wallet handlers.
+- Telegram command parsing, callback parsing, menu rendering, notification rendering, and notification dispatch retry behavior.
 
 ### Not Yet Implemented
 
-The project does not yet have:
+The project still needs:
 
-- Database persistence.
-- EF Core `DbContext`.
-- Database migrations.
-- Repository or query abstractions.
-- MediatR commands and handlers.
-- Telegram update receiving.
-- Telegram commands such as `/start`, `/add`, `/list`, `/remove`, and `/help`.
-- Startup synchronization from database into `InMemoryCacheService`.
-- Runtime synchronization when users add or remove wallets.
-- Dockerfile and compose/deployment setup.
+- Deployment configuration.
 - Integration tests for Telegram and blockchain infrastructure.
+- Deeper observability around live worker behavior.
+- Optional editing for transfer direction/token filters if that becomes part of the product UX.
 
 ## Target MVP Behavior
 
@@ -417,15 +417,12 @@ Tasks:
 
 ## Suggested Next Concrete Step
 
-The best next implementation step is Phase 1 plus Phase 2:
+The best next implementation step is production hardening:
 
-1. Add `TrackedWallet.Create(Address address, ...)`.
-2. Update tests to use the value-object overload.
-3. Add EF Core persistence with `AppDbContext`.
-4. Add repository abstractions.
-5. Add a startup cache synchronization service.
-
-That sequence gives the project a real source of truth. Once the database and cache sync exist, Telegram commands become straightforward because `/add`, `/remove`, and `/list` will have somewhere real to store and retrieve data.
+1. Finalize deployment configuration and secret wiring.
+2. Add integration coverage for persistence, Telegram update handling, and worker-to-notification flows.
+3. Improve observability around block ingestion, wallet matches, cache refreshes, notification dispatch, and Telegram failures.
+4. Decide whether transfer direction/token-filter editing belongs in the inline menu or should stay command/API-only.
 
 ## MVP Completion Checklist
 
@@ -460,24 +457,31 @@ That sequence gives the project a real source of truth. Once the database and ca
 - [x] Transaction-level notification aggregation for multi-transfer DeFi activity
 - [x] Auto-detected wallet labels from chain scans
 - [x] Transaction explorer links in notifications
-- [ ] Inline notification edit menu for alias, minimum value, and chain preferences
+- [x] Inline notification edit menu for alias, minimum value, and chain preferences
 
 ## Phase 12: Inline Notification Editing
+
+Status: implemented.
 
 Goal: turn notifications into actionable controls before release.
 
 Tasks:
 
-- Add an inline keyboard to the Telegram notification with a pencil/edit action.
-- Open a compact settings menu from the notification instead of forcing users to use text commands.
-- Allow users to edit:
+- [x] Add a linked pencil edit action to notifications and compact `/list` rows.
+- [x] Open a compact settings menu from the notification/list deep link instead of forcing users to use text commands.
+- [x] Allow users to edit:
   - wallet alias
   - Minimum USD value
   - included chains/networks
-  - transfer direction preferences
-- Persist changes immediately and refresh the in-memory cache after confirmation.
-- Keep the command-based flow available as a fallback, but make the notification-driven editor the primary UX.
-- Add callback-query handling and validation for the edit flow.
+- [x] Delete tracked wallets with confirmation.
+- [x] Persist changes immediately and refresh the in-memory cache after confirmation.
+- [x] Keep the command-based flow available as a fallback, but make the notification-driven editor the primary UX.
+- [x] Add callback-query handling and validation for the edit flow.
+
+Out of scope for the implemented MVP cut:
+
+- Transfer direction preferences.
+- Token filter editing.
 
 Recommended tests:
 

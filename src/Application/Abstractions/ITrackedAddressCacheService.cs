@@ -7,6 +7,11 @@ namespace Application.Abstractions;
 /// </summary>
 public interface ITrackedAddressCacheService
 {
+    /// <summary>
+    /// Monotonically increasing version of the tracked address set.
+    /// </summary>
+    long Version { get; }
+
     void ReplaceAll(IEnumerable<Address> addresses);
 
     bool Add(Address address);
@@ -16,4 +21,9 @@ public interface ITrackedAddressCacheService
     bool Contains(Address address);
 
     IReadOnlyCollection<Address> Snapshot();
+
+    /// <summary>
+    /// Completes when the tracked address set changes after the observed version.
+    /// </summary>
+    Task WaitForChangeAsync(long observedVersion, CancellationToken cancellationToken);
 }

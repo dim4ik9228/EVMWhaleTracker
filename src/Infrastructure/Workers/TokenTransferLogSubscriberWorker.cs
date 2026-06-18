@@ -2,9 +2,11 @@ using System.Globalization;
 using System.Threading.Channels;
 using Application.Abstractions;
 using Application.Messaging;
+using Domain.ValueObjects;
 using Infrastructure.Blockchain;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Nethereum.JsonRpc.Client;
 using Nethereum.JsonRpc.WebSocketStreamingClient;
 using Nethereum.RPC.Eth.DTOs;
 using Nethereum.RPC.Reactive.Eth.Subscriptions;
@@ -52,7 +54,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            var trackedAddresses = _trackedAddressCache.Snapshot();
+            var (trackedAddresses, cacheVersion) = GetStableTrackedAddressSnapshot();
             if (trackedAddresses.Count == 0)
             {
                 await Task.Delay(EmptyWalletDelay, stoppingToken);
@@ -61,11 +63,19 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
 
             try
             {
-                await SubscribeUntilRefreshOrDropAsync(trackedAddresses, stoppingToken);
+                await SubscribeUntilRefreshOrDropAsync(trackedAddresses, cacheVersion, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 break;
+            }
+            catch (Exception ex) when (IsExpectedWebSocketDrop(ex))
+            {
+                _logger.LogDebug(
+                    ex,
+                    "Token transfer log websocket subscription dropped for {Chain}. Reconnecting after delay.",
+                    _network.Chain);
+                await Task.Delay(_network.WebSocketReconnectDelay, stoppingToken);
             }
             catch (Exception ex)
             {
@@ -82,7 +92,8 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
     /// Opens websocket subscriptions for the current cache snapshot, then refreshes periodically to pick up wallet changes.
     /// </summary>
     private async Task SubscribeUntilRefreshOrDropAsync(
-        IReadOnlyCollection<Domain.ValueObjects.Address> trackedAddresses,
+        IReadOnlyCollection<Address> trackedAddresses,
+        long cacheVersion,
         CancellationToken stoppingToken)
     {
         var filters = Erc20TransferLogFilterBuilder.Build(trackedAddresses);
@@ -130,29 +141,34 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
                 trackedAddresses.Count,
                 filters.Count);
 
-            using var refreshCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-            refreshCts.CancelAfter(_network.SubscriptionRefreshInterval);
-
-            try
+            var cacheChangeTask = _trackedAddressCache.WaitForChangeAsync(cacheVersion, stoppingToken);
+            while (!stoppingToken.IsCancellationRequested)
             {
-                while (await queue.Reader.WaitToReadAsync(refreshCts.Token))
+                var logAvailableTask = queue.Reader.WaitToReadAsync(stoppingToken).AsTask();
+                var completedTask = await Task.WhenAny(logAvailableTask, cacheChangeTask);
+                if (completedTask == cacheChangeTask)
                 {
-                    while (queue.Reader.TryRead(out var log))
-                    {
-                        var logKey = BuildLogKey(log);
-                        if (!seenLogs.Add(logKey))
-                        {
-                            continue;
-                        }
-
-                        var block = ToRawBlockData(log);
-                        await _channels.RawBlockDataChannel.Writer.WriteAsync(block, stoppingToken);
-                    }
+                    await cacheChangeTask;
+                    _logger.LogDebug("Refreshing ERC-20 transfer log subscriptions for {Chain} after tracked address cache changed.", _network.Chain);
+                    break;
                 }
-            }
-            catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
-            {
-                _logger.LogDebug("Refreshing ERC-20 transfer log subscriptions for {Chain}.", _network.Chain);
+
+                if (!await logAvailableTask)
+                {
+                    break;
+                }
+
+                while (queue.Reader.TryRead(out var log))
+                {
+                    var logKey = BuildLogKey(log);
+                    if (!seenLogs.Add(logKey))
+                    {
+                        continue;
+                    }
+
+                    var block = ToRawBlockData(log);
+                    await _channels.RawBlockDataChannel.Writer.WriteAsync(block, stoppingToken);
+                }
             }
         }
         finally
@@ -216,6 +232,23 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
         var logIndex = log.LogIndex?.Value.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
         return $"{transactionHash}:{logIndex}";
     }
+
+    private (IReadOnlyCollection<Domain.ValueObjects.Address> Addresses, long Version) GetStableTrackedAddressSnapshot()
+    {
+        while (true)
+        {
+            var versionBeforeSnapshot = _trackedAddressCache.Version;
+            var trackedAddresses = _trackedAddressCache.Snapshot();
+            var versionAfterSnapshot = _trackedAddressCache.Version;
+            if (versionBeforeSnapshot == versionAfterSnapshot)
+            {
+                return (trackedAddresses, versionAfterSnapshot);
+            }
+        }
+    }
+
+    private static bool IsExpectedWebSocketDrop(Exception exception)
+        => exception is RpcResponseException { Message: "Client connection error" };
 
     private sealed class ChannelObserver<T> : IObserver<T>
     {

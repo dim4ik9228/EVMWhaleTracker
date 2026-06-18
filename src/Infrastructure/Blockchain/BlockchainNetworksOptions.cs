@@ -19,8 +19,6 @@ public sealed class BlockchainNetworksOptions
 
     public TimeSpan WebSocketReconnectDelay { get; init; } = TimeSpan.FromSeconds(5);
 
-    public TimeSpan SubscriptionRefreshInterval { get; init; } = TimeSpan.FromMinutes(1);
-
     public List<BlockchainNetworkOptions> Networks { get; init; } = [];
 }
 
@@ -48,8 +46,6 @@ public sealed class BlockchainNetworkOptions
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromSeconds(2);
 
     public TimeSpan WebSocketReconnectDelay { get; init; } = TimeSpan.FromSeconds(5);
-
-    public TimeSpan SubscriptionRefreshInterval { get; init; } = TimeSpan.FromMinutes(1);
 
     public string? BuildHttpRpcUrl() => AppendApiKey(HttpRpcUrl, RpcApiKey);
 

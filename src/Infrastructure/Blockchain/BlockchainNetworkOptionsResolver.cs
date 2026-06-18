@@ -103,8 +103,7 @@ public static class BlockchainNetworkOptionsResolver
             PreferWebSocket = sharedOptions.PreferWebSocket,
             StartBlockNumber = sharedOptions.StartBlockNumber ?? network.StartBlockNumber,
             PollInterval = sharedOptions.PollInterval,
-            WebSocketReconnectDelay = sharedOptions.WebSocketReconnectDelay,
-            SubscriptionRefreshInterval = sharedOptions.SubscriptionRefreshInterval
+            WebSocketReconnectDelay = sharedOptions.WebSocketReconnectDelay
         };
     }
 }

@@ -13,6 +13,24 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
     private readonly HashSet<Address> _trackedAddresses = [];
     private readonly Dictionary<Address, Dictionary<Guid, TrackedWalletCacheEntry>> _trackedWalletEntries = new();
     private readonly ReaderWriterLockSlim _lock = new(LockRecursionPolicy.NoRecursion);
+    private TaskCompletionSource _changeSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private long _version;
+
+    public long Version
+    {
+        get
+        {
+            _lock.EnterReadLock();
+            try
+            {
+                return _version;
+            }
+            finally
+            {
+                _lock.ExitReadLock();
+            }
+        }
+    }
 
     public void ReplaceAll(IEnumerable<Address> addresses)
     {
@@ -27,6 +45,8 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
             {
                 _trackedAddresses.Add(address);
             }
+
+            SignalChangedCore();
         }
         finally
         {
@@ -46,8 +66,10 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
 
             foreach (var trackedWallet in trackedWallets)
             {
-                AddCore(trackedWallet);
+                AddCore(trackedWallet, out _);
             }
+
+            SignalChangedCore();
         }
         finally
         {
@@ -62,7 +84,13 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         _lock.EnterWriteLock();
         try
         {
-            return _trackedAddresses.Add(address);
+            var added = _trackedAddresses.Add(address);
+            if (added)
+            {
+                SignalChangedCore();
+            }
+
+            return added;
         }
         finally
         {
@@ -77,7 +105,13 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         _lock.EnterWriteLock();
         try
         {
-            return AddCore(trackedWallet);
+            var added = AddCore(trackedWallet, out var addressAdded);
+            if (addressAdded)
+            {
+                SignalChangedCore();
+            }
+
+            return added;
         }
         finally
         {
@@ -93,7 +127,13 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         try
         {
             _trackedWalletEntries.Remove(address);
-            return _trackedAddresses.Remove(address);
+            var removed = _trackedAddresses.Remove(address);
+            if (removed)
+            {
+                SignalChangedCore();
+            }
+
+            return removed;
         }
         finally
         {
@@ -116,6 +156,7 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
                 {
                     _trackedWalletEntries.Remove(trackedWallet.Address);
                     _trackedAddresses.Remove(trackedWallet.Address);
+                    SignalChangedCore();
                 }
             }
 
@@ -202,14 +243,32 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         }
     }
 
+    public Task WaitForChangeAsync(long observedVersion, CancellationToken cancellationToken)
+    {
+        _lock.EnterReadLock();
+        try
+        {
+            if (_version != observedVersion)
+            {
+                return Task.CompletedTask;
+            }
+
+            return _changeSignal.Task.WaitAsync(cancellationToken);
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
+    }
+
     public void Dispose()
     {
         _lock.Dispose();
     }
 
-    private bool AddCore(TrackedWallet trackedWallet)
+    private bool AddCore(TrackedWallet trackedWallet, out bool addressAdded)
     {
-        _trackedAddresses.Add(trackedWallet.Address);
+        addressAdded = _trackedAddresses.Add(trackedWallet.Address);
         if (!_trackedWalletEntries.TryGetValue(trackedWallet.Address, out var entries))
         {
             entries = [];
@@ -219,5 +278,13 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         var wasNew = !entries.ContainsKey(trackedWallet.Id);
         entries[trackedWallet.Id] = TrackedWalletCacheEntry.FromEntity(trackedWallet);
         return wasNew;
+    }
+
+    private void SignalChangedCore()
+    {
+        _version++;
+        var previousSignal = _changeSignal;
+        _changeSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        previousSignal.TrySetResult();
     }
 }

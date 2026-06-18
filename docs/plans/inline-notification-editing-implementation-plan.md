@@ -1,7 +1,18 @@
 # Inline Notification Editing Implementation Plan
 
-Status: proposed
+Status: implemented
 Date: 2026-06-18
+
+Implemented: 2026-06-18
+
+Implementation notes:
+
+- Notifications and `/list` entries expose a Telegram deep-link pencil using `edit_wallet_{walletId:N}`.
+- Deep links open a compact tracked-wallet settings menu and best-effort delete the generated `/start ...` message.
+- Callback queries drive overview, configured-network selection, rename prompt, minimum USD prompt, and delete confirmation.
+- Focused Application commands update alias, minimum USD, chain preferences, and deletion by wallet id while refreshing the tracked-wallet cache.
+- Pending text actions are generalized for add aliases, wallet rename, and minimum USD edits.
+- Transfer direction and token-filter editing remain out of scope for this plan.
 
 Add Drops-style inline editing for tracked wallets directly from Telegram notifications. The first cut should support editing the wallet name, enabled networks, minimum USD transaction value, and deletion. Direction/token filters and favorites stay out of scope for now.
 

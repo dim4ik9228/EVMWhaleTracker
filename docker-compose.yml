@@ -33,7 +33,6 @@ services:
       BlockchainNetworks__PreferWebSocket: "true"
       BlockchainNetworks__PollInterval: ${BLOCKCHAIN_POLL_INTERVAL:-00:00:02}
       BlockchainNetworks__WebSocketReconnectDelay: ${BLOCKCHAIN_WEB_SOCKET_RECONNECT_DELAY:-00:00:05}
-      BlockchainNetworks__SubscriptionRefreshInterval: ${BLOCKCHAIN_SUBSCRIPTION_REFRESH_INTERVAL:-00:01:00}
       BlockchainNetworks__Networks__0__Chain: ${BLOCKCHAIN_0_CHAIN:-Bsc}
       BlockchainNetworks__Networks__0__Enabled: ${BLOCKCHAIN_0_ENABLED:-false}
       BlockchainNetworks__Networks__0__HttpRpcUrl: ${BLOCKCHAIN_0_HTTP_RPC_URL:-}

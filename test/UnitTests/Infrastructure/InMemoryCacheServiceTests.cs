@@ -53,6 +53,37 @@ public sealed class InMemoryCacheServiceTests
         Assert.False(cache.TryGetTelegramUserIds(secondWallet.Address, out _));
     }
 
+    [Fact]
+    public async Task WaitForChangeAsync_CompletesWhenAddressSetChanges()
+    {
+        using var cache = new InMemoryCacheService();
+        var observedVersion = cache.Version;
+
+        var waitTask = cache.WaitForChangeAsync(observedVersion, CancellationToken.None);
+
+        Assert.False(waitTask.IsCompleted);
+
+        cache.Add(CreateAddress());
+
+        await waitTask;
+        Assert.True(cache.Version > observedVersion);
+    }
+
+    [Fact]
+    public void Add_ExistingAddressForAnotherWallet_DoesNotChangeVersion()
+    {
+        using var cache = new InMemoryCacheService();
+        var firstWallet = CreateTrackedWallet(1111);
+        var secondWallet = CreateTrackedWallet(2222);
+
+        cache.Add(firstWallet);
+        var versionAfterFirstWallet = cache.Version;
+
+        cache.Add(secondWallet);
+
+        Assert.Equal(versionAfterFirstWallet, cache.Version);
+    }
+
     private static Address CreateAddress()
     {
         var result = Address.Create(AddressValue);
