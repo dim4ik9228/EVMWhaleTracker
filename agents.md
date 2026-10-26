@@ -1,3 +1,35 @@
+# Development Agent Workflow
+
+Use development subagents by default for non-trivial features, fixes, and refactors. The main thread coordinates scope, architecture, integration, and the final response. These development roles are separate from the application's background workers described below.
+
+Before implementation or review, read [current runtime context](docs/ai/context.md), [development conventions](docs/ai/conventions.md), [the subagent workflow](docs/ai/development-workflow.md), and the relevant feature plan. The active registration in `src/Presentation.Telegram/Program.cs` and the current runtime context take precedence over the historical architecture blueprint below. Native block scanning remains disabled unless the requested work explicitly changes that decision.
+
+## Workflow
+
+1. Convert the request into a bounded brief with requirements, acceptance criteria, exclusions, and validation. Existing user authorization is sufficient; ask only for material missing product decisions or actions requiring permission.
+2. Delegate independent research and QA planning when useful. Run these read-only assignments in parallel, then reconcile their findings before dependent implementation.
+3. Delegate a coherent vertical slice to `implementer-files`. Allow only one agent, including the coordinator, to edit repository files at a time.
+4. For non-trivial code changes, follow with a new `implementer-integration` agent. Give it fresh context, the requirements, and access to current code and diff, without the first implementer's reasoning or self-review. It may fix integration defects within scope.
+5. Use a separate fresh `reviewer` to review the resulting diff against the requirements. Route fixes through one writer, then have the reviewer verify resolutions. The integration pass does not replace independent review.
+6. The coordinator checks the combined result, runs appropriate validation, updates affected docs, and reports completed behavior and material validation limits. Never claim an unexecuted check passed.
+7. Trivial edits, explanations, and read-only summaries may stay in the main thread. Configuration/documentation work may use a coordinator implementation and an independent review without two coding passes. Avoid agents whose work does not improve the result.
+
+## Roles and Configuration
+
+The source of truth for model and reasoning assignments is [.codex/config.toml](.codex/config.toml) and the role files in `.codex/agents/`:
+
+- `evm-researcher`: protocol, provider, blockchain, and Telegram API research.
+- `qa-planner`: independent acceptance criteria and failure scenarios.
+- `implementer-files`: first implementation pass across the assigned slice.
+- `implementer-integration`: fresh cross-file integration and fixes.
+- `reviewer`: independent read-only correctness and regression review.
+
+Use the named custom agent when supported. If the spawning tool only accepts a model, reasoning effort, and prompt, read the role file and explicitly provide its model, effort, and instructions; a task label alone does not load a role. Use `fork_turns="none"` when supported and supply a compact self-contained brief. Role files do not change the model of an already-running coordinator.
+
+Read-only roles must not modify files or run commands that write artifacts, even when inherited permissions permit it. Custom agent definitions do not enforce a separate sandbox. The project config caps concurrently open subagent threads at three, excluding the coordinator; respect any tighter host limit. Before each new stage, collect results and close/release completed threads using the host's supported tool when available. Do not assume a finished turn releases an open-thread slot. If the host has no release tool and capacity prevents a fresh spawn, report that limit and use the documented coordinator fallback; do not reuse an implementer's context as independent integration/review. Subagents must not delegate further. If a configured model or tool is unavailable, disclose the limitation and use an available suitable assignment; never silently claim the configured role ran.
+
+---
+
 # EVM On-Chain Tracking Platform: Agent Architecture (MVP)
 
 This document outlines the architectural design, responsibilities, and interaction patterns of the background processing units ("agents/workers") for the EVM-compatible on-chain tracking Telegram bot. 

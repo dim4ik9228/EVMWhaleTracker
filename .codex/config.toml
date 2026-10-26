@@ -1,0 +1,11 @@
+# Project defaults; explicit task settings take precedence.
+# This does not change the model of an already-running coordinator.
+model = "gpt-6.1-sol"
+model_reasoning_effort = "medium"
+
+[agents]
+enabled = true
+# Open spawned threads, excluding the coordinator; release completed threads between stages.
+max_concurrent_threads_per_session = 3
+default_subagent_model = "gpt-6.1-sol"
+default_subagent_reasoning_effort = "medium"
