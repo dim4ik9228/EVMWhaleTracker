@@ -8,6 +8,22 @@ namespace UnitTests.Infrastructure;
 public sealed class NotificationAggregationWorkerTests
 {
     [Fact]
+    public async Task NewChains_KeepIdenticalTransactionHashesSeparate()
+    {
+        await using var fixture = new NotificationAggregationFixture();
+        var worker = fixture.CreateWorker();
+        await worker.StartAsync(CancellationToken.None);
+        await fixture.Channels.NotificationPayloadChannel.Writer.WriteAsync(CreatePayload("0xsame", 1m) with { Chain = SupportedChain.Robinhood });
+        await fixture.Channels.NotificationPayloadChannel.Writer.WriteAsync(CreatePayload("0xsame", 2m) with { Chain = SupportedChain.Base });
+        var first = await fixture.ReadAggregatedAsync();
+        var second = await fixture.ReadAggregatedAsync();
+        Assert.Equal(2, new[] { first.Chain, second.Chain }.Distinct().Count());
+        Assert.Single(first.Lines);
+        Assert.Single(second.Lines);
+        await fixture.StopWorkerAsync(worker);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_GroupsNotificationsByTransaction()
     {
         await using var fixture = new NotificationAggregationFixture();

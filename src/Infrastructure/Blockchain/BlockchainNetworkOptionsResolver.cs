@@ -48,7 +48,7 @@ public static class BlockchainNetworkOptionsResolver
         }
 
         var enabledNetworks = configuredNetworks
-            .Where(network => network.Enabled)
+            .Where(network => network.Enabled && network.Chain != Domain.Common.SupportedChain.Arc)
             .Select(network => ApplySharedSettings(network, multiNetworkOptions))
             .ToArray();
 

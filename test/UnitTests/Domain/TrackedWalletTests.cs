@@ -138,7 +138,8 @@ public sealed class TrackedWalletTests
         var createResult = TrackedWallet.Create(
             ChecksummedAddress,
             userId: 12345,
-            enabledChains: Enum.GetValues<SupportedChain>().Where(chain => chain != SupportedChain.Base));
+            enabledChains: Enum.GetValues<SupportedChain>()
+                .Where(chain => chain != SupportedChain.Base && chain != SupportedChain.Arc));
         Assert.True(createResult.IsSuccess);
 
         var wallet = createResult.Value;

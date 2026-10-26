@@ -12,6 +12,54 @@ public sealed class TrackedWalletRepositoryTests
     private const string LowercaseAddress = "0x52908400098527886e0f7030069857d2e4169ee7";
 
     [Fact]
+    public async Task NewChainSettings_RoundTripWithoutChangingExistingExplicitLists()
+    {
+        await using var fixture = await PersistenceFixture.CreateAsync();
+        var wallet = CreateTrackedWallet(12345);
+        Assert.True(wallet.UpdateEnabledChains([SupportedChain.Robinhood, SupportedChain.Arc]).IsSuccess);
+        await fixture.Repository.AddAsync(wallet, CancellationToken.None);
+        await fixture.Repository.SaveChangesAsync(CancellationToken.None);
+        Assert.Equal("[4663,5042]", fixture.DbContext.Entry(wallet).Property<string>("_enabledChainsJson").CurrentValue);
+        fixture.DbContext.ChangeTracker.Clear();
+        var fetched = await fixture.Repository.GetByUserIdAndAddressAsync(12345, wallet.Address, CancellationToken.None);
+        Assert.NotNull(fetched);
+        Assert.Equal([SupportedChain.Robinhood, SupportedChain.Arc], fetched.EnabledChains);
+        Assert.True(fetched.UpdateEnabledChains([SupportedChain.Bsc, SupportedChain.Base]).IsSuccess);
+        await fixture.Repository.SaveChangesAsync(CancellationToken.None);
+        fixture.DbContext.ChangeTracker.Clear();
+        fetched = await fixture.Repository.GetByUserIdAndAddressAsync(12345, wallet.Address, CancellationToken.None);
+        Assert.Equal([SupportedChain.Bsc, SupportedChain.Base], fetched!.EnabledChains);
+    }
+
+    [Fact]
+    public async Task ExistingAllButOneNumericChainList_RemainsExplicitAfterNetworkExpansion()
+    {
+        await using var fixture = await PersistenceFixture.CreateAsync();
+        var wallet = CreateTrackedWallet(12345);
+        await fixture.Repository.AddAsync(wallet, CancellationToken.None);
+        // Stored before Robinhood and Arc were added: all original chains except Base.
+        const string savedJson = "[1,10,30,56,100,137,999,42161,42220]";
+        fixture.DbContext.Entry(wallet).Property<string>("_enabledChainsJson").CurrentValue = savedJson;
+        await fixture.Repository.SaveChangesAsync(CancellationToken.None);
+        fixture.DbContext.ChangeTracker.Clear();
+
+        var fetched = await fixture.Repository.GetByUserIdAndAddressAsync(12345, wallet.Address, CancellationToken.None);
+        Assert.NotNull(fetched);
+        Assert.Equal(savedJson, fixture.DbContext.Entry(fetched).Property<string>("_enabledChainsJson").CurrentValue);
+        Assert.DoesNotContain(SupportedChain.Robinhood, fetched.EnabledChains);
+        Assert.DoesNotContain(SupportedChain.Arc, fetched.EnabledChains);
+
+        Assert.True(fetched.SetChainTracking(SupportedChain.Base, enabled: true).IsSuccess);
+        await fixture.Repository.SaveChangesAsync(CancellationToken.None);
+        fixture.DbContext.ChangeTracker.Clear();
+        fetched = await fixture.Repository.GetByUserIdAndAddressAsync(12345, wallet.Address, CancellationToken.None);
+        Assert.NotNull(fetched);
+        Assert.Equal(10, fetched.EnabledChains.Count);
+        Assert.DoesNotContain(SupportedChain.Robinhood, fetched.EnabledChains);
+        Assert.DoesNotContain(SupportedChain.Arc, fetched.EnabledChains);
+    }
+
+    [Fact]
     public async Task Add_SaveAndQueryByUserIdAndAddress_Works()
     {
         await using var fixture = await PersistenceFixture.CreateAsync();

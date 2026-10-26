@@ -7,6 +7,20 @@ namespace UnitTests.Presentation;
 
 public sealed class TrackedWalletMenuRendererTests
 {
+    [Theory]
+    [InlineData(SupportedChain.Robinhood, "RH")]
+    public void RenderNetworks_UsesConfiguredNewChainsAndSavedMembership(SupportedChain chain, string label)
+    {
+        var metadata = new global::Infrastructure.Blockchain.StaticChainMetadataProvider().Get(chain);
+        var renderer = new TrackedWalletMenuRenderer();
+        var unrestricted = renderer.RenderNetworks(CreateWallet(), [metadata]);
+        Assert.Contains(unrestricted.ReplyMarkup.InlineKeyboard.SelectMany(row => row), b => b.Text == $"✅ {label}");
+        var restricted = renderer.RenderNetworks(CreateWallet(enabledChains: [SupportedChain.Bsc]), [metadata]);
+        Assert.DoesNotContain(restricted.ReplyMarkup.InlineKeyboard.SelectMany(row => row), b => b.Text == $"✅ {label}");
+        var disabled = renderer.RenderNetworks(CreateWallet(), ConfiguredChains());
+        Assert.DoesNotContain(disabled.ReplyMarkup.InlineKeyboard.SelectMany(row => row), b => b.CallbackData?.Contains($":{(int)chain}:") == true);
+    }
+
     [Fact]
     public void RenderNetworks_TreatsEmptyEnabledChainsAsAllConfiguredNetworks()
     {

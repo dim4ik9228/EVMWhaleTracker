@@ -8,6 +8,21 @@ namespace UnitTests.Presentation;
 
 public sealed class TelegramNotificationRendererTests
 {
+    [Theory]
+    [InlineData(SupportedChain.Robinhood, "RH", "ETH", "https://robinhoodchain.blockscout.com")]
+    public void Render_NewChains_UsesTheirLabelsAndExplorer(SupportedChain chain, string label, string symbol, string explorer)
+    {
+        var metadata = new StaticChainMetadataProvider().Get(chain);
+        Assert.Equal(symbol, metadata.NativeSymbol);
+        Assert.Equal(18, metadata.NativeDecimals);
+        var notification = CreateSingleLineNotification(tokenContractAddress: "0xtoken", chain: chain);
+        var rendered = CreateRenderer().Render(notification);
+        Assert.Contains(label, rendered.Text);
+        Assert.Contains($"{explorer}/address/", rendered.Text);
+        Assert.Contains($"{explorer}/token/0xtoken", rendered.Text);
+        Assert.Contains($"{explorer}/tx/0xtxhash", rendered.Text);
+    }
+
     [Fact]
     public void Render_EscapesMarkdownV2_AndUsesCompactLinkedLayout()
     {
@@ -121,11 +136,12 @@ public sealed class TelegramNotificationRendererTests
         string trackedWalletDisplayText = "debabki.eth",
         string counterpartyDisplayText = "from_wallet",
         string assetSymbol = "BNB",
-        string? tokenContractAddress = null)
+        string? tokenContractAddress = null,
+        SupportedChain chain = SupportedChain.Bsc)
         => new(
             TelegramUserId: 7777,
             TrackedWalletId: Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            Chain: SupportedChain.Bsc,
+            Chain: chain,
             TrackedWalletAddress: "0x52908400098527886E0F7030069857D2E4169EE7",
             TrackedWalletDisplayText: trackedWalletDisplayText,
             TransactionHash: "0xtxhash",

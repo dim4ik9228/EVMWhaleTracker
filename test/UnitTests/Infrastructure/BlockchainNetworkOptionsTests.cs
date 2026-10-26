@@ -6,6 +6,26 @@ namespace UnitTests.Infrastructure;
 
 public sealed class BlockchainNetworkOptionsTests
 {
+    [Theory]
+    [InlineData("Robinhood", 4663, "robinhood-mainnet")]
+    public void Resolve_NewMainnets_UsesSharedKeyAndHonorsDisabledFlag(string chain, int id, string host)
+    {
+        var values = new Dictionary<string, string?>
+        {
+            ["BlockchainNetworks:RpcApiKey"] = "synthetic-key",
+            ["BlockchainNetworks:Networks:0:Chain"] = chain,
+            ["BlockchainNetworks:Networks:0:Enabled"] = "true",
+            ["BlockchainNetworks:Networks:0:HttpRpcUrl"] = $"https://{host}.infura.io/v3/",
+            ["BlockchainNetworks:Networks:0:WebSocketRpcUrl"] = $"wss://{host}.infura.io/ws/v3/"
+        };
+        var network = Assert.Single(BlockchainNetworkOptionsResolver.Resolve(BuildConfiguration(values)));
+        Assert.Equal(id, (int)network.Chain);
+        Assert.Equal($"https://{host}.infura.io/v3/synthetic-key", network.BuildHttpRpcUrl());
+        Assert.Equal($"wss://{host}.infura.io/ws/v3/synthetic-key", network.BuildWebSocketRpcUrl());
+        values["BlockchainNetworks:Networks:0:Enabled"] = "false";
+        Assert.Empty(BlockchainNetworkOptionsResolver.Resolve(BuildConfiguration(values)));
+    }
+
     [Fact]
     public void BuildHttpRpcUrl_AppendsApiKeyToBaseUrl()
     {

@@ -62,6 +62,7 @@ public static class TelegramCallbackDataParser
             case "nt" when parts.Length == 6
                 && int.TryParse(parts[4], out var chainId)
                 && Enum.IsDefined(typeof(SupportedChain), chainId)
+                && chainId != (int)SupportedChain.Arc
                 && TryParseToggle(parts[5], out var enabled):
                 callbackData = new TelegramCallbackData(
                     TelegramCallbackAction.NetworkToggle,

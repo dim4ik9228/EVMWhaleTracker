@@ -42,6 +42,7 @@ public sealed class AssetPriceOptions
             [SupportedChain.Celo] = "celo",
             [SupportedChain.Arbitrum] = "arbitrum",
             [SupportedChain.Base] = "base",
-            [SupportedChain.HyperEvm] = "hyperevm"
+            [SupportedChain.HyperEvm] = "hyperevm",
+            [SupportedChain.Robinhood] = "robinhood"
         };
 }

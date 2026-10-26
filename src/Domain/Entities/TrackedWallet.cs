@@ -222,7 +222,9 @@ public sealed class TrackedWallet
     /// </summary>
     public Result SetChainTracking(SupportedChain chain, bool enabled)
     {
-        var allSupportedChains = Enum.GetValues<SupportedChain>();
+        var allSupportedChains = Enum.GetValues<SupportedChain>()
+            .Where(candidate => candidate != SupportedChain.Arc)
+            .ToHashSet();
         var enabledChains = EnabledChains.Count == 0
             ? allSupportedChains.ToHashSet()
             : EnabledChains.ToHashSet();
@@ -241,7 +243,7 @@ public sealed class TrackedWallet
             return Result.Failure(Errors.TrackedWallet.AtLeastOneEnabledChainRequired);
         }
 
-        _enabledChainsJson = enabledChains.Count == allSupportedChains.Length
+        _enabledChainsJson = enabledChains.SetEquals(allSupportedChains)
             ? SerializeEnabledChains([])
             : SerializeEnabledChains(enabledChains);
         Touch();

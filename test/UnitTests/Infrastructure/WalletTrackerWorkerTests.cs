@@ -13,6 +13,44 @@ public sealed class WalletTrackerWorkerTests
 {
     private const string TrackedAddress = "0x52908400098527886E0F7030069857D2E4169EE7";
 
+    [Theory]
+    [InlineData(SupportedChain.Robinhood, NotificationOperation.Received)]
+    [InlineData(SupportedChain.Robinhood, NotificationOperation.Sent)]
+    [InlineData(SupportedChain.Robinhood, NotificationOperation.SelfTransfer)]
+    public async Task NewChains_MatchTokenDirectionsAndUseTokenDecimalsWithoutUsd(SupportedChain chain, NotificationOperation operation)
+    {
+        await using var fixture = new WalletTrackerWorkerFixture(new FailingAssetPriceProvider(), enabledChains: []);
+        var worker = fixture.CreateWorker();
+        await worker.StartAsync(CancellationToken.None);
+        const string other = "0x1111111111111111111111111111111111111111";
+        var from = operation == NotificationOperation.Received ? other : TrackedAddress;
+        var to = operation == NotificationOperation.Sent ? other : TrackedAddress;
+        var block = new RawBlockData(chain, 108, "0xblock", DateTimeOffset.UtcNow, [],
+            [TokenTransferLog("0xnewchain", from, to)]);
+        await fixture.Channels.RawBlockDataChannel.Writer.WriteAsync(block);
+        var notification = await fixture.ReadNotificationAsync();
+        Assert.Equal(chain, notification.Chain);
+        Assert.Equal(operation, notification.Operation);
+        Assert.Equal(252.582704m, notification.Amount);
+        Assert.Null(notification.UsdValue);
+        Assert.False(await fixture.TryReadNotificationAsync(TimeSpan.FromMilliseconds(100)));
+        await fixture.StopWorkerAsync(worker);
+    }
+
+    [Theory]
+    [InlineData(SupportedChain.Robinhood)]
+    public async Task NewChains_RespectExistingExplicitWalletChainList(SupportedChain chain)
+    {
+        await using var fixture = new WalletTrackerWorkerFixture();
+        var worker = fixture.CreateWorker();
+        await worker.StartAsync(CancellationToken.None);
+        await fixture.Channels.RawBlockDataChannel.Writer.WriteAsync(new RawBlockData(
+            chain, 109, "0xblock", DateTimeOffset.UtcNow, [],
+            [TokenTransferLog("0xrestricted", "0x1111111111111111111111111111111111111111", TrackedAddress)]));
+        Assert.False(await fixture.TryReadNotificationAsync(TimeSpan.FromMilliseconds(150)));
+        await fixture.StopWorkerAsync(worker);
+    }
+
     [Fact]
     public async Task ExecuteAsync_EmitsNotification_WhenTrackedAddressAppearsInToField()
     {
@@ -301,12 +339,13 @@ public sealed class WalletTrackerWorkerTests
 
         public WalletTrackerWorkerFixture(
             IAssetPriceProvider? priceProvider = null,
-            bool trackTokenTransfers = true)
+            bool trackTokenTransfers = true,
+            SupportedChain[]? enabledChains = null)
         {
             Channels = new OnChainPipelineChannels();
             _priceProvider = priceProvider ?? new FakeAssetPriceProvider();
 
-            var trackedWallet = CreateTrackedWallet(trackTokenTransfers);
+            var trackedWallet = CreateTrackedWallet(trackTokenTransfers, enabledChains);
             Cache = new InMemoryCacheService();
             Cache.Add(trackedWallet);
         }
@@ -356,7 +395,7 @@ public sealed class WalletTrackerWorkerTests
             return ValueTask.CompletedTask;
         }
 
-        private static TrackedWallet CreateTrackedWallet(bool trackTokenTransfers)
+        private static TrackedWallet CreateTrackedWallet(bool trackTokenTransfers, SupportedChain[]? enabledChains)
         {
             var result = TrackedWallet.Create(
                 TrackedAddress,
@@ -364,7 +403,7 @@ public sealed class WalletTrackerWorkerTests
                 minimumUsdValue: 1m,
                 trackTokenTransfers: trackTokenTransfers,
                 alias: "debabki.eth",
-                enabledChains: [SupportedChain.Bsc]);
+                enabledChains: enabledChains ?? [SupportedChain.Bsc]);
             Assert.True(result.IsSuccess);
             return result.Value;
         }

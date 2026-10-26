@@ -96,10 +96,20 @@ $envLines = @(
     "BLOCKCHAIN_2_CHAIN=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:2:Chain') -DefaultValue 'Arbitrum')",
     "BLOCKCHAIN_2_ENABLED=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:2:Enabled') -DefaultValue 'false')",
     "BLOCKCHAIN_2_HTTP_RPC_URL=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:2:HttpRpcUrl') -DefaultValue 'https://arbitrum-mainnet.infura.io/v3/')",
-    "BLOCKCHAIN_2_WEB_SOCKET_RPC_URL=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:2:WebSocketRpcUrl') -DefaultValue 'wss://arbitrum-mainnet.infura.io/ws/v3/')"
+    "BLOCKCHAIN_2_WEB_SOCKET_RPC_URL=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:2:WebSocketRpcUrl') -DefaultValue 'wss://arbitrum-mainnet.infura.io/ws/v3/')",
+    "",
+    "BLOCKCHAIN_3_CHAIN=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:3:Chain') -DefaultValue 'Ethereum')",
+    "BLOCKCHAIN_3_ENABLED=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:3:Enabled') -DefaultValue 'false')",
+    "BLOCKCHAIN_3_HTTP_RPC_URL=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:3:HttpRpcUrl') -DefaultValue 'https://mainnet.infura.io/v3/')",
+    "BLOCKCHAIN_3_WEB_SOCKET_RPC_URL=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:3:WebSocketRpcUrl') -DefaultValue 'wss://mainnet.infura.io/ws/v3/')",
+    "",
+    "BLOCKCHAIN_4_CHAIN=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:4:Chain') -DefaultValue 'Robinhood')",
+    "BLOCKCHAIN_4_ENABLED=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:4:Enabled') -DefaultValue 'false')",
+    "BLOCKCHAIN_4_HTTP_RPC_URL=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:4:HttpRpcUrl') -DefaultValue 'https://robinhood-mainnet.infura.io/v3/')",
+    "BLOCKCHAIN_4_WEB_SOCKET_RPC_URL=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:Networks:4:WebSocketRpcUrl') -DefaultValue 'wss://robinhood-mainnet.infura.io/ws/v3/')"
 )
 
-$outputFullPath = Join-Path $repoRoot $OutputPath
+$outputFullPath = if ([System.IO.Path]::IsPathRooted($OutputPath)) { $OutputPath } else { Join-Path $repoRoot $OutputPath }
 $envLines | Set-Content -LiteralPath $outputFullPath -Encoding utf8
 
 Write-Host "Wrote $outputFullPath from user secrets id $userSecretsId"
