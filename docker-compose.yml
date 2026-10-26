@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: evmwhaletracker-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_DB: EvmWhaleTracker
       POSTGRES_USER: postgres
@@ -20,6 +21,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: final
     container_name: evmwhaletracker-app
     depends_on:
       postgres:
