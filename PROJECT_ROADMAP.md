@@ -8,6 +8,10 @@ Status: the end-to-end MVP flow is now implemented and validated on a real chain
 
 ## Current State
 
+### Development Workflow
+
+Implemented 2026-10-19: coordinated development subagents with research, QA planning, sequential implementation/integration passes, and independent review. Roles and model assignments are configured under `.codex/`; see [development workflow](docs/ai/development-workflow.md). This enables future product work and does not change the bot's runtime pipeline.
+
 ### Implemented
 
 The solution already has the core Clean Architecture projects:
@@ -416,6 +420,10 @@ Tasks:
   - Telegram failures
 
 ## Suggested Next Concrete Step
+
+Polymarket prediction tracking was implemented and deployed on 2026-10-25 using filtered Infura Polygon settlement logs plus cached public metadata. Profile mapping, live BUY alerts, threshold suppression and restart recovery were observed; temporary enrollment was removed and original settings preserved. Perps, combos and ambiguous routed redemption remain excluded, with unexecuted live edge cases recorded in the [completion brief](docs/plans/polymarket-polygon-tracking-implementation-brief.md). Remaining production work includes latency/backlog tuning, live SELL/redemption and reorg validation, monitoring and backup/restore operations.
+
+Robinhood Chain was added on 2026-10-19 through the existing Infura WebSocket pipeline; real Telegram delivery passed. Arc support was removed on 2026-10-25 at the user's request, closing its rollout blocker by removal. See [Arc removal](docs/plans/arc-removal.md) and the [historical expansion record](docs/plans/robinhood-arc-implementation-plan.md). Robinhood remains disabled in checked-in defaults. Native Hyperliquid/HyperCore has a separate default-off implementation and live rollout record; see its [implementation and validation record](docs/plans/hyperliquid-native-websocket-implementation-brief.md). Solana is outside the current scope. The production-hardening work below remains outstanding.
 
 The best next implementation step is production hardening:
 
