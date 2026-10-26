@@ -108,7 +108,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
         CancellationToken cancellationToken)
         => _sendRetryPolicy.SendAsync(
             payload.TelegramUserId,
-            waitForPermitAsync: ct => _rateLimiter.WaitAsync(ct),
+            waitForPermitAsync: ct => _rateLimiter.WaitAsync(payload.TelegramUserId, ct),
             sendAsync: async ct =>
             {
                 await _telegramBotClient.SendMessage(

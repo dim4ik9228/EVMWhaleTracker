@@ -55,6 +55,18 @@ services:
       BlockchainNetworks__Networks__4__Enabled: ${BLOCKCHAIN_4_ENABLED:-false}
       BlockchainNetworks__Networks__4__HttpRpcUrl: ${BLOCKCHAIN_4_HTTP_RPC_URL:-}
       BlockchainNetworks__Networks__4__WebSocketRpcUrl: ${BLOCKCHAIN_4_WEB_SOCKET_RPC_URL:-}
+      Hyperliquid__Enabled: ${HYPERLIQUID_ENABLED:-false}
+      Hyperliquid__WebSocketUrl: ${HYPERLIQUID_WEB_SOCKET_URL:-wss://api.hyperliquid.xyz/ws}
+      Hyperliquid__InfoUrl: ${HYPERLIQUID_INFO_URL:-https://api.hyperliquid.xyz/info}
+      Hyperliquid__MaxUniqueWallets: ${HYPERLIQUID_MAX_UNIQUE_WALLETS:-10}
+      Hyperliquid__PingSeconds: ${HYPERLIQUID_PING_SECONDS:-20}
+      Hyperliquid__PongTimeoutSeconds: ${HYPERLIQUID_PONG_TIMEOUT_SECONDS:-40}
+      Hyperliquid__MaximumFrameBytes: ${HYPERLIQUID_MAXIMUM_FRAME_BYTES:-2097152}
+      Hyperliquid__QueueCapacity: ${HYPERLIQUID_QUEUE_CAPACITY:-128}
+      Hyperliquid__MaximumRecoveryPages: ${HYPERLIQUID_MAXIMUM_RECOVERY_PAGES:-8}
+      Hyperliquid__RecoveryHours: ${HYPERLIQUID_RECOVERY_HOURS:-24}
+      Hyperliquid__RetentionDays: ${HYPERLIQUID_RETENTION_DAYS:-7}
+      Hyperliquid__AggregationMilliseconds: ${HYPERLIQUID_AGGREGATION_MILLISECONDS:-1000}
       EnsReverseLookup__Enabled: ${ENS_REVERSE_LOOKUP_ENABLED:-true}
       EnsReverseLookup__Timeout: ${ENS_REVERSE_LOOKUP_TIMEOUT:-00:00:02}
     restart: unless-stopped

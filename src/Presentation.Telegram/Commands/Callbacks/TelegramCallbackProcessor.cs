@@ -1,4 +1,7 @@
 using Application.Abstractions;
+using Application.Hyperliquid;
+using Telegram.Bot.Types.ReplyMarkups;
+using Telegram.Bot.Types.Enums;
 using Application.TrackedWallets;
 using Infrastructure.Blockchain;
 using MediatR;
@@ -15,7 +18,8 @@ public sealed class TelegramCallbackProcessor(
     IPendingTelegramActionStore pendingActions,
     ITrackedWalletMenuRenderer menuRenderer,
     IChainMetadataProvider chainMetadataProvider,
-    IReadOnlyList<BlockchainNetworkOptions> configuredNetworks)
+    IReadOnlyList<BlockchainNetworkOptions> configuredNetworks,
+    IHyperliquidSettings? hyperliquid = null)
     : ITelegramCallbackProcessor
 {
     /// <summary>
@@ -55,6 +59,7 @@ public sealed class TelegramCallbackProcessor(
 
         return callbackData.Action switch
         {
+            TelegramCallbackAction.Hyperliquid or TelegramCallbackAction.HyperliquidToggle => await HandleHyperliquidAsync(request.TelegramUserId, callbackData, cancellationToken),
             TelegramCallbackAction.Overview => Edit(RenderOverview(walletResult.Value), "Done."),
             TelegramCallbackAction.Networks => Edit(RenderNetworks(walletResult.Value)),
             TelegramCallbackAction.NetworkToggle => await HandleNetworkToggleAsync(
@@ -78,6 +83,23 @@ public sealed class TelegramCallbackProcessor(
                 cancellationToken),
             _ => Alert("This menu is no longer available.")
         };
+    }
+
+    private async Task<TelegramCallbackResponse> HandleHyperliquidAsync(long userId, TelegramCallbackData callback, CancellationToken ct)
+    {
+        if (hyperliquid is null) return Alert("Hyperliquid is unavailable.");
+        var result = callback.Action == TelegramCallbackAction.HyperliquidToggle && callback.Enabled is { } enabled
+            ? await hyperliquid.SetAsync(userId, callback.WalletId, enabled, ct, callback.Generation)
+            : await hyperliquid.GetAsync(userId, callback.WalletId, ct);
+        if (result.IsFailure) return Alert(result.Error.Description);
+        var status = result.Value;
+        var id = callback.WalletId.ToString("N");
+        var generation = Convert.ToBase64String(status.Generation.ToByteArray()).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        return Edit(new TelegramMenuMessage($"<b>Hyperliquid</b>\n{System.Net.WebUtility.HtmlEncode(status.Status)}\nNative USDC perp trades, liquidations, deposits and withdrawals.\nHistory may be delayed or incomplete during recovery.", ParseMode.Html,
+            new InlineKeyboardMarkup([
+                [InlineKeyboardButton.WithCallbackData(status.Enabled ? "Turn Off" : "Turn On", $"hc:{id}:{(status.Enabled ? "0" : "1")}:{generation}")],
+                [InlineKeyboardButton.WithCallbackData("Refresh", $"tw:v1:h:{id}"), InlineKeyboardButton.WithCallbackData("Back", $"tw:v1:o:{id}")]
+            ])));
     }
 
     private async Task<TelegramCallbackResponse> HandleNetworkToggleAsync(

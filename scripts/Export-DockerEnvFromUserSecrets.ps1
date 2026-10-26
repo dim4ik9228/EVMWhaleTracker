@@ -79,6 +79,18 @@ if (-not (Test-Path -LiteralPath $userSecretsPath)) {
 $secrets = Get-Content -LiteralPath $userSecretsPath -Raw | ConvertFrom-Json -AsHashtable
 
 $envLines = @(
+    "HYPERLIQUID_ENABLED=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('Hyperliquid:Enabled') -DefaultValue 'false')",
+    "HYPERLIQUID_WEB_SOCKET_URL=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('Hyperliquid:WebSocketUrl') -DefaultValue 'wss://api.hyperliquid.xyz/ws')",
+    "HYPERLIQUID_INFO_URL=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('Hyperliquid:InfoUrl') -DefaultValue 'https://api.hyperliquid.xyz/info')",
+    "HYPERLIQUID_MAX_UNIQUE_WALLETS=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('Hyperliquid:MaxUniqueWallets') -DefaultValue '10')",
+    "HYPERLIQUID_PING_SECONDS=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('Hyperliquid:PingSeconds') -DefaultValue '20')",
+    "HYPERLIQUID_PONG_TIMEOUT_SECONDS=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('Hyperliquid:PongTimeoutSeconds') -DefaultValue '40')",
+    "HYPERLIQUID_MAXIMUM_FRAME_BYTES=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('Hyperliquid:MaximumFrameBytes') -DefaultValue '2097152')",
+    "HYPERLIQUID_QUEUE_CAPACITY=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('Hyperliquid:QueueCapacity') -DefaultValue '128')",
+    "HYPERLIQUID_MAXIMUM_RECOVERY_PAGES=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('Hyperliquid:MaximumRecoveryPages') -DefaultValue '8')",
+    "HYPERLIQUID_RECOVERY_HOURS=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('Hyperliquid:RecoveryHours') -DefaultValue '24')",
+    "HYPERLIQUID_RETENTION_DAYS=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('Hyperliquid:RetentionDays') -DefaultValue '7')",
+    "HYPERLIQUID_AGGREGATION_MILLISECONDS=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('Hyperliquid:AggregationMilliseconds') -DefaultValue '1000')",
     "TELEGRAM_BOT_TOKEN=$(Get-SecretValue -Secrets $secrets -Key 'TelegramBot:BotToken')",
     "BLOCKCHAIN_RPC_API_KEY=$(Get-FirstSecretValue -Secrets $secrets -Keys @('BlockchainNetworks:RpcApiKey', 'BlockchainNetworks:Networks:0:RpcApiKey', 'BlockchainIndexer:RpcApiKey'))",
     "BLOCKCHAIN_ENABLE_RPC_DIAGNOSTICS=$(Get-FirstSecretValueOrDefault -Secrets $secrets -Keys @('BlockchainNetworks:EnableRpcDiagnostics', 'BlockchainIndexer:EnableRpcDiagnostics') -DefaultValue 'false')",

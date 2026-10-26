@@ -1,4 +1,6 @@
 using Application.Messaging;
+using Application.Hyperliquid;
+using Infrastructure.Hyperliquid;
 using Application.Abstractions;
 using Infrastructure.Caching;
 using Infrastructure.AddressLabels;
@@ -63,6 +65,16 @@ if (string.IsNullOrWhiteSpace(connectionString))
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddScoped<ITrackedWalletRepository, TrackedWalletRepository>();
 builder.Services.AddScoped<IAddressLabelRepository, AddressLabelRepository>();
+builder.Services.AddOptions<HyperliquidOptions>().Bind(builder.Configuration.GetSection("Hyperliquid"))
+    .Validate(o => o.IsValidForStartup(), "Hyperliquid options exceed supported bounds").ValidateOnStart();
+builder.Services.AddSingleton<HyperliquidChangeSignal>();
+builder.Services.AddScoped<IHyperliquidSettings, HyperliquidSettings>();
+builder.Services.AddScoped<HyperliquidStore>();
+builder.Services.AddSingleton<IHyperliquidSocketFactory, HyperliquidSocketFactory>();
+builder.Services.AddHttpClient("Hyperliquid", client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddSingleton<IHyperliquidInfoClient>(sp => new HyperliquidInfoClient(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("Hyperliquid"), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<HyperliquidOptions>>()));
+builder.Services.AddHostedService<HyperliquidWorker>();
 builder.Services.AddScoped<AddressLabelSeedImporter>();
 builder.Services.AddMediatR(cfg =>
 {
@@ -135,6 +147,9 @@ if (!string.IsNullOrWhiteSpace(botToken))
     builder.Services.AddSingleton<TelegramCommandUpdateHandler>();
     builder.Services.AddHostedService<TelegramUpdateReceiverWorker>();
     builder.Services.AddHostedService<NotificationDispatcherWorker>();
+    builder.Services.AddSingleton<HyperliquidNotificationRenderer>();
+    builder.Services.AddSingleton<IHyperliquidNotificationSender, HyperliquidNotificationSender>();
+    builder.Services.AddHostedService<HyperliquidDeliveryWorker>();
 }
 else
 {

@@ -20,6 +20,19 @@ public static class TelegramCallbackDataParser
         }
 
         var parts = data.Split(':');
+        if (parts.Length == 4 && parts[0] == "hc" && Guid.TryParseExact(parts[1], "N", out var coreWallet)
+            && TryParseToggle(parts[2], out var coreToggle) && parts[3].Length == 22)
+        {
+            try
+            {
+                var bytes = Convert.FromBase64String(parts[3].Replace('-', '+').Replace('_', '/') + "==");
+                if (bytes.Length != 16) return false;
+                var generation = new Guid(bytes);
+                callbackData = new TelegramCallbackData(TelegramCallbackAction.HyperliquidToggle, coreWallet, Enabled: coreToggle, Generation: generation);
+                return true;
+            }
+            catch (FormatException) { return false; }
+        }
         if (parts.Length < 4
             || !string.Equals(parts[0], "tw", StringComparison.Ordinal)
             || !string.Equals(parts[1], "v1", StringComparison.Ordinal))
@@ -35,6 +48,9 @@ public static class TelegramCallbackDataParser
 
         switch (actionToken)
         {
+            case "h" when parts.Length == 4:
+                callbackData = new TelegramCallbackData(TelegramCallbackAction.Hyperliquid, walletId);
+                return true;
             case "o" when parts.Length == 4:
                 callbackData = new TelegramCallbackData(TelegramCallbackAction.Overview, walletId);
                 return true;
@@ -95,13 +111,18 @@ public readonly record struct TelegramCallbackData(
     TelegramCallbackAction Action,
     Guid WalletId,
     SupportedChain? Chain = null,
-    bool? Enabled = null);
+    bool? Enabled = null,
+    Guid? Generation = null);
 
 /// <summary>
 /// Supported actions in the tracked-wallet inline settings menu callback protocol.
 /// </summary>
 public enum TelegramCallbackAction
 {
+    /// <summary>Separate HyperCore status menu.</summary>
+    Hyperliquid,
+    /// <summary>Explicit idempotent HyperCore preference.</summary>
+    HyperliquidToggle,
     /// <summary>
     /// Render the tracked-wallet overview menu.
     /// </summary>

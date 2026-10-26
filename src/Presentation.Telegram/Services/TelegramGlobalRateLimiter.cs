@@ -5,6 +5,26 @@ namespace Presentation.Telegram.Services;
 /// </summary>
 public sealed class TelegramGlobalRateLimiter : IAsyncDisposable
 {
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, DateTimeOffset> _chatNext = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, SemaphoreSlim> _chats = new();
+
+    /// <summary>Reserves the same per-chat and global allowance for every notification source.</summary>
+    public async Task WaitAsync(long chatId, CancellationToken cancellationToken)
+    {
+        var gate = _chats.GetOrAdd(chatId, _ => new SemaphoreSlim(1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_chatNext.TryGetValue(chatId, out var next))
+            {
+                var delay = next - DateTimeOffset.UtcNow;
+                if (delay > TimeSpan.Zero) await Task.Delay(delay, cancellationToken);
+            }
+            await WaitAsync(cancellationToken);
+            _chatNext[chatId] = DateTimeOffset.UtcNow.AddSeconds(1);
+        }
+        finally { gate.Release(); }
+    }
     private readonly int _permitsPerSecond;
     private readonly SemaphoreSlim _semaphore;
     private readonly CancellationTokenSource _shutdown = new();

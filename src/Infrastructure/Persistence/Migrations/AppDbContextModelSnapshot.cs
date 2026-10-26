@@ -65,10 +65,6 @@ namespace Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Address", "Chain")
-                        .IsUnique()
-                        .HasFilter("\"IsEnabled\" = TRUE AND \"Chain\" IS NOT NULL");
-
                     b.HasIndex("Address")
                         .IsUnique()
                         .HasDatabaseName("IX_AddressLabels_Address_Global")
@@ -80,7 +76,130 @@ namespace Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Source");
 
+                    b.HasIndex("Address", "Chain")
+                        .IsUnique()
+                        .HasFilter("\"IsEnabled\" = TRUE AND \"Chain\" IS NOT NULL");
+
                     b.ToTable("AddressLabels", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Entities.HyperliquidCheckpoint", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Gap")
+                        .HasColumnType("text");
+
+                    b.Property<long>("Time")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("HyperliquidCheckpoint");
+                });
+
+            modelBuilder.Entity("Domain.Entities.HyperliquidDelivery", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("DueAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("EventId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("Generation")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("WalletId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WalletId");
+
+                    b.HasIndex("State", "DueAt");
+
+                    b.HasIndex("EventId", "WalletId", "Generation")
+                        .IsUnique();
+
+                    b.ToTable("HyperliquidDelivery");
+                });
+
+            modelBuilder.Entity("Domain.Entities.HyperliquidEvent", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("StoredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Stream")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("Time")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StoredAt");
+
+                    b.HasIndex("Address", "Stream", "Time");
+
+                    b.ToTable("HyperliquidEvent");
+                });
+
+            modelBuilder.Entity("Domain.Entities.HyperliquidReservation", b =>
+                {
+                    b.Property<string>("Address")
+                        .HasMaxLength(42)
+                        .HasColumnType("character varying(42)");
+
+                    b.HasKey("Address");
+
+                    b.ToTable("HyperliquidReservation");
+                });
+
+            modelBuilder.Entity("Domain.Entities.HyperliquidSetting", b =>
+                {
+                    b.Property<Guid>("WalletId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ActivatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<Guid>("Generation")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("WalletId");
+
+                    b.ToTable("HyperliquidSetting");
                 });
 
             modelBuilder.Entity("Domain.Entities.TrackedWallet", b =>
@@ -133,6 +252,30 @@ namespace Infrastructure.Persistence.Migrations
                         .IsUnique();
 
                     b.ToTable("TrackedWallets", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Entities.HyperliquidDelivery", b =>
+                {
+                    b.HasOne("Domain.Entities.HyperliquidEvent", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domain.Entities.TrackedWallet", null)
+                        .WithMany()
+                        .HasForeignKey("WalletId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Domain.Entities.HyperliquidSetting", b =>
+                {
+                    b.HasOne("Domain.Entities.TrackedWallet", null)
+                        .WithOne()
+                        .HasForeignKey("Domain.Entities.HyperliquidSetting", "WalletId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 #pragma warning restore 612, 618
         }
