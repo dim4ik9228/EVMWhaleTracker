@@ -1,4 +1,5 @@
 using Application.Abstractions;
+using Application.Polymarket;
 using Application.TrackedWallets;
 using Domain.ValueObjects;
 using MediatR;
@@ -15,7 +16,8 @@ public sealed class TelegramWalletCommandProcessor(
     ISender sender,
     IPendingTelegramActionStore pendingActions,
     IEnsReverseLookupProvider ensReverseLookupProvider,
-    ITelegramBotUsernameProvider botUsernameProvider)
+    ITelegramBotUsernameProvider botUsernameProvider,
+    IPolymarketProfileResolver? polymarket = null)
     : ITelegramWalletCommandProcessor
 {
     private const string AliasPrompt = "Please give a name to this wallet";
@@ -45,8 +47,11 @@ public sealed class TelegramWalletCommandProcessor(
                 return await AddWalletAsync(telegramUserId, rawAddress, ensAlias, cancellationToken);
             }
 
-            pendingActions.Set(telegramUserId, PendingTelegramAction.AddWalletAlias(rawAddress));
-            return new TelegramCommandResponse(AliasPrompt);
+            var profile = polymarket is null ? null : await polymarket.ResolveAsync(rawAddress, cancellationToken);
+            var suggestion = profile?.Profile?.PublicName;
+            pendingActions.Set(telegramUserId, PendingTelegramAction.AddWalletAlias(rawAddress) with { SuggestedAlias = suggestion });
+            return new TelegramCommandResponse(string.IsNullOrWhiteSpace(suggestion) ? AliasPrompt
+                : $"Polymarket {(profile!.Profile!.DisplayUsernamePublic ? "public name" : "pseudonym")}: <b>{TelegramCommandText.HtmlEncode(suggestion)}</b>\nReply <code>use</code> to use this suggestion, or send your own name.");
         }
 
         return await AddWalletAsync(telegramUserId, rawAddress, alias, cancellationToken);

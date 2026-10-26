@@ -1,5 +1,6 @@
 using System.Globalization;
 using Application.TrackedWallets;
+using Application.Polymarket;
 using MediatR;
 using Presentation.Telegram.Commands;
 using Presentation.Telegram.Commands.Menus;
@@ -14,7 +15,8 @@ public sealed class TelegramPendingActionProcessor(
     ISender sender,
     IPendingTelegramActionStore pendingActions,
     ITelegramWalletCommandProcessor walletCommandProcessor,
-    ITrackedWalletMenuResponseFactory menuResponseFactory)
+    ITrackedWalletMenuResponseFactory menuResponseFactory,
+    IPolymarketSettings? polymarket = null)
     : ITelegramPendingActionProcessor
 {
     private const string AliasPrompt = "Please give a name to this wallet";
@@ -30,7 +32,7 @@ public sealed class TelegramPendingActionProcessor(
             PendingTelegramActionType.AddWalletAlias => await HandlePendingAliasAsync(
                 telegramUserId,
                 pendingAction.RawAddress ?? string.Empty,
-                messageText,
+                messageText.Trim().Equals("use", StringComparison.OrdinalIgnoreCase) && pendingAction.SuggestedAlias is not null ? pendingAction.SuggestedAlias : messageText,
                 cancellationToken),
             PendingTelegramActionType.RenameTrackedWallet => await HandlePendingRenameAsync(
                 telegramUserId,
@@ -42,6 +44,8 @@ public sealed class TelegramPendingActionProcessor(
                 pendingAction.WalletId.GetValueOrDefault(),
                 messageText,
                 cancellationToken),
+            PendingTelegramActionType.PolymarketMinimum or PendingTelegramActionType.PolymarketSource =>
+                await HandlePolymarketAsync(telegramUserId, pendingAction, messageText, cancellationToken),
             _ => new TelegramCommandResponse(TelegramCommandHelp.Text)
         };
 
@@ -109,6 +113,21 @@ public sealed class TelegramPendingActionProcessor(
         pendingActions.Clear(telegramUserId);
         return menuResponseFactory.CreateOverviewResponse(result.Value);
     }
+
+    private async Task<TelegramCommandResponse> HandlePolymarketAsync(long userId, PendingTelegramAction action, string text, CancellationToken ct)
+    {
+        if (polymarket is null) return new("Polymarket is unavailable.");
+        if (action.Type == PendingTelegramActionType.PolymarketMinimum && (!TryParseDecimal(text, out _) || text.Contains('-')))
+            return new("Send a non-negative Polymarket minimum gross trade value in collateral units (pUSD / USDC.e).");
+        var result = action.Type == PendingTelegramActionType.PolymarketSource
+            ? await polymarket.BindAsync(userId, action.WalletId!.Value, text.Trim(), action.Generation ?? Guid.Empty, ct)
+            : await polymarket.MinimumAsync(userId, action.WalletId!.Value, ParseMinimum(text), action.Generation ?? Guid.Empty, ct);
+        if (result.IsFailure) return new(TelegramCommandText.HtmlEncode(result.Error.Description));
+        pendingActions.Clear(userId);
+        return new("Polymarket setting saved. Open the wallet editor to review the account and tracking status.");
+    }
+
+    private static decimal ParseMinimum(string text) { TryParseDecimal(text, out var value); return value; }
 
     private static bool TryParseDecimal(string value, out decimal result)
         => decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out result)

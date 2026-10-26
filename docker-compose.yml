@@ -27,6 +27,51 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      PolymarketPolygon__Families__0: ${POLYMARKET_POLYGON_FAMILY_0:-ctf-current}
+      PolymarketPolygon__Families__1: ${POLYMARKET_POLYGON_FAMILY_1:-ctf-negative-current}
+      PolymarketPolygon__Families__2: ${POLYMARKET_POLYGON_FAMILY_2:-position-v2}
+      PolymarketPolygon__Families__3: ${POLYMARKET_POLYGON_FAMILY_3:-ctf-legacy}
+      PolymarketPolygon__Families__4: ${POLYMARKET_POLYGON_FAMILY_4:-ctf-negative-legacy}
+      PolymarketPolygon__Enabled: ${POLYMARKET_POLYGON_ENABLED:-false}
+      PolymarketPolygon__HttpRpcUrl: ${POLYMARKET_POLYGON_HTTP_RPC_URL:-https://polygon-mainnet.infura.io/v3/}
+      PolymarketPolygon__WebSocketRpcUrl: ${POLYMARKET_POLYGON_WEB_SOCKET_RPC_URL:-wss://polygon-mainnet.infura.io/ws/v3/}
+      PolymarketPolygon__RpcApiKey: ${POLYMARKET_POLYGON_RPC_API_KEY:-}
+      PolymarketPolygon__RegistryVersion: ${POLYMARKET_POLYGON_REGISTRY_VERSION:-polygon-2026-10-25.1}
+      PolymarketPolygon__FinalityMode: ${POLYMARKET_POLYGON_FINALITY_MODE:-Finalized}
+      PolymarketPolygon__ConfirmationDepth: ${POLYMARKET_POLYGON_CONFIRMATION_DEPTH:-128}
+      PolymarketPolygon__MaxUniqueAddresses: ${POLYMARKET_POLYGON_MAX_UNIQUE_ADDRESSES:-20}
+      PolymarketPolygon__MaxSubscriptions: ${POLYMARKET_POLYGON_MAX_SUBSCRIPTIONS:-6}
+      PolymarketPolygon__QueueCapacity: ${POLYMARKET_POLYGON_QUEUE_CAPACITY:-256}
+      PolymarketPolygon__MaximumFrameBytes: ${POLYMARKET_POLYGON_MAXIMUM_FRAME_BYTES:-2097152}
+      PolymarketPolygon__MaximumResponseBytes: ${POLYMARKET_POLYGON_MAXIMUM_RESPONSE_BYTES:-4194304}
+      PolymarketPolygon__TimeoutSeconds: ${POLYMARKET_POLYGON_TIMEOUT_SECONDS:-15}
+      PolymarketPolygon__RpcMinimumIntervalMilliseconds: ${POLYMARKET_POLYGON_RPC_MINIMUM_INTERVAL_MS:-250}
+      PolymarketPolygon__RecoveryBlocks: ${POLYMARKET_POLYGON_RECOVERY_BLOCKS:-43200}
+      PolymarketPolygon__LogRangeBlocks: ${POLYMARKET_POLYGON_LOG_RANGE_BLOCKS:-1000}
+      PolymarketPolygon__RecoveryRequests: ${POLYMARKET_POLYGON_RECOVERY_REQUESTS:-200}
+      PolymarketPolygon__RetainedAncestry: ${POLYMARKET_POLYGON_RETAINED_ANCESTRY:-512}
+      PolymarketPolygon__RetentionDays: ${POLYMARKET_POLYGON_RETENTION_DAYS:-14}
+      PolymarketPolygon__EnrichmentWaitSeconds: ${POLYMARKET_POLYGON_ENRICHMENT_WAIT_SECONDS:-60}
+      PolymarketPolygon__MetadataCacheCapacity: ${POLYMARKET_POLYGON_METADATA_CACHE_CAPACITY:-2048}
+      PolymarketPolygon__MarketsUrl: ${POLYMARKET_POLYGON_MARKETS_URL:-https://gamma-api.polymarket.com/markets}
+      Polymarket__Enabled: ${POLYMARKET_ENABLED:-false}
+      Polymarket__ProfileUrl: ${POLYMARKET_PROFILE_URL:-https://gamma-api.polymarket.com/public-profile}
+      Polymarket__ActivityUrl: ${POLYMARKET_ACTIVITY_URL:-https://data-api.polymarket.com/v2/activity}
+      Polymarket__TimeoutSeconds: ${POLYMARKET_TIMEOUT_SECONDS:-5}
+      Polymarket__PollSeconds: ${POLYMARKET_POLL_SECONDS:-10}
+      Polymarket__MaxUniqueWallets: ${POLYMARKET_MAX_UNIQUE_WALLETS:-20}
+      Polymarket__RequestsPerMinute: ${POLYMARKET_REQUESTS_PER_MINUTE:-120}
+      Polymarket__HttpConcurrency: ${POLYMARKET_HTTP_CONCURRENCY:-2}
+      Polymarket__PageSize: ${POLYMARKET_PAGE_SIZE:-100}
+      Polymarket__MaximumPages: ${POLYMARKET_MAXIMUM_PAGES:-10}
+      Polymarket__MaximumResponseBytes: ${POLYMARKET_MAXIMUM_RESPONSE_BYTES:-2097152}
+      Polymarket__OverlapMinutes: ${POLYMARKET_OVERLAP_MINUTES:-5}
+      Polymarket__ReconciliationMinutes: ${POLYMARKET_RECONCILIATION_MINUTES:-60}
+      Polymarket__RecoveryHours: ${POLYMARKET_RECOVERY_HOURS:-24}
+      Polymarket__RetentionDays: ${POLYMARKET_RETENTION_DAYS:-7}
+      Polymarket__ProfileTtlHours: ${POLYMARKET_PROFILE_TTL_HOURS:-24}
+      Polymarket__MissingProfileTtlMinutes: ${POLYMARKET_MISSING_PROFILE_TTL_MINUTES:-60}
+      Polymarket__ProfileCacheCapacity: ${POLYMARKET_PROFILE_CACHE_CAPACITY:-512}
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=EvmWhaleTracker;Username=postgres;Password=postgres
       TelegramBot__BotToken: ${TELEGRAM_BOT_TOKEN:-}

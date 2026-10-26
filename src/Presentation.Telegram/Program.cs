@@ -1,3 +1,5 @@
+using Application.Polymarket;
+using Infrastructure.Polymarket;
 using Application.Messaging;
 using Application.Hyperliquid;
 using Infrastructure.Hyperliquid;
@@ -64,6 +66,27 @@ if (string.IsNullOrWhiteSpace(connectionString))
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddScoped<ITrackedWalletRepository, TrackedWalletRepository>();
+builder.Services.AddOptions<PolymarketOptions>().Bind(builder.Configuration.GetSection("Polymarket"))
+    .Validate(o => o.IsValidForStartup(), "Polymarket options exceed supported bounds").ValidateOnStart();
+builder.Services.AddHttpClient("Polymarket", client => client.Timeout = Timeout.InfiniteTimeSpan)
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddSingleton<IPolymarketProfileResolver>(sp => new PolymarketProfileResolver(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("Polymarket"), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PolymarketOptions>>()));
+builder.Services.AddScoped<IPolymarketSettings, PolymarketSettings>();
+builder.Services.AddOptions<PolymarketPolygonOptions>().Bind(builder.Configuration.GetSection("PolymarketPolygon"))
+    .PostConfigure(o => { if (string.IsNullOrWhiteSpace(o.RpcApiKey)) o.RpcApiKey = builder.Configuration["BlockchainNetworks:RpcApiKey"]; })
+    .Validate(o => o.IsValid(), "Polymarket Polygon options exceed supported bounds").ValidateOnStart();
+builder.Services.AddHttpClient("PolymarketPolygon", client => client.Timeout = Timeout.InfiniteTimeSpan)
+    // Infura credentials are part of the URL path; factory request logs must never include it.
+    .RemoveAllLoggers()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddSingleton<IPolymarketPolygonRpc>(sp => new PolymarketPolygonRpc(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("PolymarketPolygon"), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PolymarketPolygonOptions>>()));
+builder.Services.AddSingleton<IPolymarketMarketResolver>(sp => new PolymarketMarketResolver(
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient("Polymarket"), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PolymarketPolygonOptions>>()));
+builder.Services.AddSingleton<PolymarketPolygonHealth>();
+builder.Services.AddScoped<PolymarketPolygonStore>();
+builder.Services.AddHostedService<PolymarketPolygonWorker>();
 builder.Services.AddScoped<IAddressLabelRepository, AddressLabelRepository>();
 builder.Services.AddOptions<HyperliquidOptions>().Bind(builder.Configuration.GetSection("Hyperliquid"))
     .Validate(o => o.IsValidForStartup(), "Hyperliquid options exceed supported bounds").ValidateOnStart();
@@ -147,6 +170,9 @@ if (!string.IsNullOrWhiteSpace(botToken))
     builder.Services.AddSingleton<TelegramCommandUpdateHandler>();
     builder.Services.AddHostedService<TelegramUpdateReceiverWorker>();
     builder.Services.AddHostedService<NotificationDispatcherWorker>();
+    builder.Services.AddSingleton<PolymarketNotificationRenderer>();
+    builder.Services.AddSingleton<IPolymarketNotificationSender, PolymarketNotificationSender>();
+    builder.Services.AddHostedService<PolymarketDeliveryWorker>();
     builder.Services.AddSingleton<HyperliquidNotificationRenderer>();
     builder.Services.AddSingleton<IHyperliquidNotificationSender, HyperliquidNotificationSender>();
     builder.Services.AddHostedService<HyperliquidDeliveryWorker>();

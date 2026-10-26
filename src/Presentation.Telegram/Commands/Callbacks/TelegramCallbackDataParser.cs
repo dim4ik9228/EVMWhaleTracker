@@ -20,6 +20,21 @@ public static class TelegramCallbackDataParser
         }
 
         var parts = data.Split(':');
+        if (parts.Length == 4 && parts[0] == "pm" && parts[1].Length == 1 && Guid.TryParseExact(parts[2], "N", out var pmWallet) && parts[3].Length == 22)
+        {
+            var action = parts[1] switch { "t" => TelegramCallbackAction.PolymarketToggle, "b" => TelegramCallbackAction.PolymarketBind,
+                "m" => TelegramCallbackAction.PolymarketMinimum, "a" => TelegramCallbackAction.PolymarketAlias,
+                "s" => TelegramCallbackAction.PolymarketSource, _ => (TelegramCallbackAction?)null };
+            if (action is null) return false;
+            try
+            {
+                var bytes = Convert.FromBase64String(parts[3].Replace('-', '+').Replace('_', '/') + "==");
+                if (bytes.Length != 16) return false;
+                callbackData = new TelegramCallbackData(action.Value, pmWallet, Generation: new Guid(bytes));
+                return true;
+            }
+            catch (FormatException) { return false; }
+        }
         if (parts.Length == 4 && parts[0] == "hc" && Guid.TryParseExact(parts[1], "N", out var coreWallet)
             && TryParseToggle(parts[2], out var coreToggle) && parts[3].Length == 22)
         {
@@ -48,6 +63,9 @@ public static class TelegramCallbackDataParser
 
         switch (actionToken)
         {
+            case "p" when parts.Length == 4:
+                callbackData = new TelegramCallbackData(TelegramCallbackAction.Polymarket, walletId);
+                return true;
             case "h" when parts.Length == 4:
                 callbackData = new TelegramCallbackData(TelegramCallbackAction.Hyperliquid, walletId);
                 return true;
@@ -119,6 +137,18 @@ public readonly record struct TelegramCallbackData(
 /// </summary>
 public enum TelegramCallbackAction
 {
+    /// <summary>Independent Polymarket details.</summary>
+    Polymarket,
+    /// <summary>Explicit source preference.</summary>
+    PolymarketToggle,
+    /// <summary>Confirm the currently displayed mapped account.</summary>
+    PolymarketBind,
+    /// <summary>Independent minimum prompt.</summary>
+    PolymarketMinimum,
+    /// <summary>Use current public profile name.</summary>
+    PolymarketAlias,
+    /// <summary>Supply a verified trading address.</summary>
+    PolymarketSource,
     /// <summary>Separate HyperCore status menu.</summary>
     Hyperliquid,
     /// <summary>Explicit idempotent HyperCore preference.</summary>

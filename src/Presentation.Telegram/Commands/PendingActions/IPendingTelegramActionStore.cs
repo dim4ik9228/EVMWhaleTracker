@@ -27,7 +27,9 @@ public interface IPendingTelegramActionStore
 public sealed record PendingTelegramAction(
     PendingTelegramActionType Type,
     string? RawAddress = null,
-    Guid? WalletId = null)
+    Guid? WalletId = null,
+    string? SuggestedAlias = null,
+    Guid? Generation = null)
 {
     /// <summary>
     /// Creates a pending alias action for the two-step add-wallet flow.
@@ -57,6 +59,10 @@ public enum PendingTelegramActionType
     /// The next message supplies an alias for a newly added wallet address.
     /// </summary>
     AddWalletAlias,
+    /// <summary>Independent protocol trade minimum.</summary>
+    PolymarketMinimum,
+    /// <summary>Owner supplied verified source binding.</summary>
+    PolymarketSource,
 
     /// <summary>
     /// The next message supplies a replacement alias for an existing tracked wallet.

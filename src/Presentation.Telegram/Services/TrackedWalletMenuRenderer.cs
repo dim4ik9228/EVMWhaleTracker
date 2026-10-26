@@ -39,7 +39,7 @@ public sealed class TrackedWalletMenuRenderer : ITrackedWalletMenuRenderer
                 InlineKeyboardButton.WithCallbackData("💵 Min USD", $"tw:v1:m:{walletId}"),
                 InlineKeyboardButton.WithCallbackData("🛰 Networks", $"tw:v1:n:{walletId}")
             ],
-            [InlineKeyboardButton.WithCallbackData("Hyperliquid", $"tw:v1:h:{walletId}")],
+            [InlineKeyboardButton.WithCallbackData("Hyperliquid", $"tw:v1:h:{walletId}"), InlineKeyboardButton.WithCallbackData("Polymarket", $"tw:v1:p:{walletId}")],
             [InlineKeyboardButton.WithCallbackData("✏️ Rename", $"tw:v1:r:{walletId}")],
             [InlineKeyboardButton.WithCallbackData("🗑 Delete", $"tw:v1:d:{walletId}")],
             [InlineKeyboardButton.WithCallbackData("↩️ Back", $"tw:v1:b:{walletId}")]
