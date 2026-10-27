@@ -12,14 +12,14 @@ public static class BlockchainNetworkOptionsResolver
         ArgumentNullException.ThrowIfNull(configuration);
 
         var multiNetworkOptions = configuration
-            .GetSection("BlockchainNetworks")
+            .GetSection(BlockchainConfiguration.NetworksSection)
             .Get<BlockchainNetworksOptions>();
 
         var configuredNetworks = multiNetworkOptions?.Networks ?? [];
         if (configuredNetworks.Count == 0)
         {
             var legacyOptions = configuration
-                .GetSection("BlockchainIndexer")
+                .GetSection(BlockchainConfiguration.IndexerSection)
                 .Get<BlockchainIndexerOptions>();
 
             if (legacyOptions is null
@@ -38,7 +38,7 @@ public static class BlockchainNetworkOptionsResolver
                     EnableRpcDiagnostics = legacyOptions.EnableRpcDiagnostics,
                     HttpRpcUrl = legacyOptions.HttpRpcUrl,
                     WebSocketRpcUrl = legacyOptions.WebSocketRpcUrl,
-                    RpcApiKey = configuration["BlockchainIndexer:RpcApiKey"],
+                    RpcApiKey = configuration[BlockchainConfiguration.LegacyApiKey],
                     PreferWebSocket = legacyOptions.PreferWebSocket,
                     StartBlockNumber = legacyOptions.StartBlockNumber,
                     PollInterval = legacyOptions.PollInterval,
@@ -61,7 +61,7 @@ public static class BlockchainNetworkOptionsResolver
         if (duplicateChains.Length > 0)
         {
             throw new InvalidOperationException(
-                $"Duplicate enabled blockchain network configuration: {string.Join(", ", duplicateChains)}.");
+                BlockchainNetworkOptionsResolverDiagnostics.DuplicateNetworks(string.Join(", ", duplicateChains)));
         }
 
         foreach (var network in enabledNetworks)
@@ -69,14 +69,14 @@ public static class BlockchainNetworkOptionsResolver
             if (string.IsNullOrWhiteSpace(network.BuildWebSocketRpcUrl()))
             {
                 throw new InvalidOperationException(
-                    $"Blockchain network {network.Chain} is enabled but WebSocketRpcUrl is not configured.");
+                    BlockchainNetworkOptionsResolverDiagnostics.WebSocketEndpointRequired(network.Chain));
             }
 
             if (string.IsNullOrWhiteSpace(network.BuildHttpRpcUrl())
                 && string.IsNullOrWhiteSpace(network.BuildWebSocketRpcUrl()))
             {
                 throw new InvalidOperationException(
-                    $"Blockchain network {network.Chain} must configure HttpRpcUrl or WebSocketRpcUrl.");
+                    BlockchainNetworkOptionsResolverDiagnostics.RpcEndpointRequired(network.Chain));
             }
         }
 

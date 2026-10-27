@@ -100,7 +100,7 @@ public sealed class TelegramNotificationEnricher(IAddressLabelResolver addressLa
     {
         if (string.IsNullOrWhiteSpace(address))
         {
-            return "unknown";
+            return TelegramNotificationRendererText.Unknown;
         }
 
         return address.Length <= 12

@@ -23,6 +23,9 @@ public sealed class EthereumEnsReverseLookupProvider(
     ILogger<EthereumEnsReverseLookupProvider> logger)
     : IEnsReverseLookupProvider
 {
+    private const string RpcVersion = "2.0";
+    private const string EthCallMethod = "eth_call";
+    private const string LatestBlock = "latest";
     private const string EnsRegistryAddress = "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e";
     private const string ResolverSelector = "0178b8bf";
     private const string NameSelector = "691f3431";
@@ -38,7 +41,7 @@ public sealed class EthereumEnsReverseLookupProvider(
             return null;
         }
 
-        var cacheKey = $"ens-reverse:{address.Value}";
+        var cacheKey = BuildCacheKey(address.Value);
         if (cache.TryGetValue<EnsCacheEntry>(cacheKey, out var cached) && cached is not null)
         {
             return cached.Name;
@@ -76,13 +79,13 @@ public sealed class EthereumEnsReverseLookupProvider(
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             cache.Set(cacheKey, EnsCacheEntry.Failure, options.FailureCacheDuration);
-            logger.LogDebug("ENS reverse lookup timed out for address {Address}.", address.Value);
+            logger.LogDebug(EthereumEnsReverseLookupProviderDiagnostics.ReverseLookupTimedOut, address.Value);
             return null;
         }
         catch (Exception ex)
         {
             cache.Set(cacheKey, EnsCacheEntry.Failure, options.FailureCacheDuration);
-            logger.LogDebug(ex, "ENS reverse lookup failed for address {Address}.", address.Value);
+            logger.LogDebug(ex, EthereumEnsReverseLookupProviderDiagnostics.ReverseLookupFailed, address.Value);
             return null;
         }
     }
@@ -139,12 +142,12 @@ public sealed class EthereumEnsReverseLookupProvider(
         CancellationToken cancellationToken)
     {
         var request = new JsonRpcRequest(
-            Jsonrpc: "2.0",
-            Method: "eth_call",
+            Jsonrpc: RpcVersion,
+            Method: EthCallMethod,
             Params:
             [
                 new JsonRpcCall(to, data),
-                "latest"
+                LatestBlock
             ],
             Id: 1);
 
@@ -159,7 +162,7 @@ public sealed class EthereumEnsReverseLookupProvider(
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         if (document.RootElement.TryGetProperty("error", out var error))
         {
-            logger.LogDebug("ENS RPC error: {Error}", error.ToString());
+            logger.LogDebug(EthereumEnsReverseLookupProviderDiagnostics.RpcFailure, error.ToString());
             return null;
         }
 
@@ -256,4 +259,5 @@ public sealed class EthereumEnsReverseLookupProvider(
     private sealed record JsonRpcCall(
         string To,
         string Data);
+    private static string BuildCacheKey(string address) => $"ens-reverse:{address}";
 }

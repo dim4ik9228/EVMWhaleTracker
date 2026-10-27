@@ -13,35 +13,35 @@ await File.WriteAllTextAsync(
     options.OutputPath,
     JsonSerializer.Serialize(result.Seed, SeedJsonContext.Default.CandidateSeed));
 
-Console.WriteLine($"Wrote {result.Seed.Entries.Count:N0} {options.ReviewStatus} entries to {options.OutputPath}");
-Console.WriteLine($"Read rows: {result.Stats.ReadRows:N0}");
-Console.WriteLine($"Null/empty nameTags skipped: {result.Stats.NullNameTagRows:N0}");
-Console.WriteLine($"Invalid address rows skipped: {result.Stats.InvalidAddressRows:N0}");
-Console.WriteLine($"Excluded by noise rules: {result.Stats.ExcludedRows:N0}");
-Console.WriteLine($"Duplicate rows collapsed: {result.Stats.DuplicateRows:N0}");
+Console.WriteLine(ImportDiagnostics.Written(result.Seed.Entries.Count, options.ReviewStatus, options.OutputPath));
+Console.WriteLine(ImportDiagnostics.ReadRows(result.Stats.ReadRows));
+Console.WriteLine(ImportDiagnostics.EmptyTagsSkipped(result.Stats.NullNameTagRows));
+Console.WriteLine(ImportDiagnostics.InvalidAddressesSkipped(result.Stats.InvalidAddressRows));
+Console.WriteLine(ImportDiagnostics.NoiseExcluded(result.Stats.ExcludedRows));
+Console.WriteLine(ImportDiagnostics.DuplicatesCollapsed(result.Stats.DuplicateRows));
 Console.WriteLine();
-Console.WriteLine("Entries by chain:");
+Console.WriteLine(ImportDiagnostics.EntriesByChain);
 foreach (var item in result.Seed.Entries.GroupBy(entry => entry.Chain).OrderBy(group => group.Key))
 {
-    Console.WriteLine($"  {item.Key ?? "Global"}: {item.Count():N0}");
+    Console.WriteLine(ImportDiagnostics.CountByLabel(item.Key ?? ImportDiagnostics.GlobalScope, item.Count()));
 }
 
 Console.WriteLine();
-Console.WriteLine("Entries by kind:");
+Console.WriteLine(ImportDiagnostics.EntriesByKind);
 foreach (var item in result.Seed.Entries.GroupBy(entry => entry.Kind).OrderByDescending(group => group.Count()))
 {
-    Console.WriteLine($"  {item.Key}: {item.Count():N0}");
+    Console.WriteLine(ImportDiagnostics.CountByLabel(item.Key, item.Count()));
 }
 
 Console.WriteLine();
-Console.WriteLine("Top source labels:");
+Console.WriteLine(ImportDiagnostics.TopSourceLabels);
 foreach (var item in result.Seed.Entries
     .GroupBy(entry => entry.SourceLabel)
     .OrderByDescending(group => group.Count())
     .ThenBy(group => group.Key)
     .Take(25))
 {
-    Console.WriteLine($"  {item.Key}: {item.Count():N0}");
+    Console.WriteLine(ImportDiagnostics.CountByLabel(item.Key, item.Count()));
 }
 
 internal sealed record ImportOptions(
@@ -56,26 +56,26 @@ internal sealed record ImportOptions(
         var inputPaths = new List<string>();
         var rawDirectory = "data/address-labels/raw";
         var includedKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var reviewStatus = "candidate";
+        var reviewStatus = ImportReviewStates.Candidate;
 
         for (var index = 0; index < args.Length; index++)
         {
             switch (args[index])
             {
-                case "--output":
-                    outputPath = RequireValue(args, ref index, "--output");
+                case ImportArguments.Output:
+                    outputPath = RequireValue(args, ref index, ImportArguments.Output);
                     break;
-                case "--input":
-                    inputPaths.Add(RequireValue(args, ref index, "--input"));
+                case ImportArguments.Input:
+                    inputPaths.Add(RequireValue(args, ref index, ImportArguments.Input));
                     break;
-                case "--raw-dir":
-                    rawDirectory = RequireValue(args, ref index, "--raw-dir");
+                case ImportArguments.RawDirectory:
+                    rawDirectory = RequireValue(args, ref index, ImportArguments.RawDirectory);
                     break;
-                case "--kind":
-                    includedKinds.Add(RequireValue(args, ref index, "--kind"));
+                case ImportArguments.Kind:
+                    includedKinds.Add(RequireValue(args, ref index, ImportArguments.Kind));
                     break;
-                case "--review-status":
-                    reviewStatus = RequireValue(args, ref index, "--review-status");
+                case ImportArguments.ReviewStatus:
+                    reviewStatus = RequireValue(args, ref index, ImportArguments.ReviewStatus);
                     break;
                 default:
                     inputPaths.Add(args[index]);
@@ -83,10 +83,10 @@ internal sealed record ImportOptions(
             }
         }
 
-        if (!reviewStatus.Equals("candidate", StringComparison.OrdinalIgnoreCase) &&
-            !reviewStatus.Equals("reviewed", StringComparison.OrdinalIgnoreCase))
+        if (!reviewStatus.Equals(ImportReviewStates.Candidate, StringComparison.OrdinalIgnoreCase) &&
+            !reviewStatus.Equals(ImportReviewStates.Reviewed, StringComparison.OrdinalIgnoreCase))
         {
-            throw new ArgumentException("--review-status must be candidate or reviewed.");
+            throw new ArgumentException(ImportDiagnostics.InvalidReviewStatus);
         }
 
         if (inputPaths.Count == 0)
@@ -102,7 +102,7 @@ internal sealed record ImportOptions(
     {
         if (index + 1 >= args.Length)
         {
-            throw new ArgumentException($"{optionName} requires a value.");
+            throw new ArgumentException(ImportDiagnostics.OptionValueRequired(optionName));
         }
 
         index++;
@@ -113,7 +113,7 @@ internal sealed record ImportOptions(
     {
         if (!Directory.Exists(rawDirectory))
         {
-            throw new DirectoryNotFoundException($"Raw address-label directory was not found: {rawDirectory}");
+            throw new DirectoryNotFoundException(ImportDiagnostics.RawDirectoryMissing(rawDirectory));
         }
 
         var supportedFileNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -133,7 +133,7 @@ internal sealed record ImportOptions(
 
         if (files.Length == 0)
         {
-            throw new InvalidOperationException($"No supported account JSON files were found in {rawDirectory}.");
+            throw new InvalidOperationException(ImportDiagnostics.NoSupportedFiles(rawDirectory));
         }
 
         return files;
@@ -151,7 +151,7 @@ internal sealed record InputSource(string Path, string Chain, int ChainId, strin
             "accounts.bsc.json" => new InputSource(path, "Bsc", 56, "bscscan"),
             "accounts.base.json" => new InputSource(path, "Base", 8453, "basescan"),
             "accounts.arbitrum.json" => new InputSource(path, "Arbitrum", 42161, "arbiscan"),
-            _ => throw new ArgumentException($"Cannot infer chain from file name '{fileName}'.")
+            _ => throw new ArgumentException(ImportDiagnostics.UnknownChain(fileName))
         };
     }
 }
@@ -331,14 +331,14 @@ internal sealed class NameTagExtractor(ImportOptions options)
     {
         if (!File.Exists(input.Path))
         {
-            throw new FileNotFoundException("Input file was not found.", input.Path);
+            throw new FileNotFoundException(ImportDiagnostics.InputFileMissing, input.Path);
         }
 
         using var stream = File.OpenRead(input.Path);
         using var document = JsonDocument.Parse(stream, new JsonDocumentOptions { AllowTrailingCommas = true });
         if (document.RootElement.ValueKind != JsonValueKind.Array)
         {
-            throw new InvalidOperationException($"{input.Path} must contain a JSON array.");
+            throw new InvalidOperationException(ImportDiagnostics.InputArrayRequired(input.Path));
         }
 
         foreach (var row in document.RootElement.EnumerateArray())
@@ -594,3 +594,43 @@ internal enum CandidateKind
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(CandidateSeed))]
 internal sealed partial class SeedJsonContext : JsonSerializerContext;
+
+/// <summary>Console and validation text for the standalone import tool.</summary>
+internal static class ImportDiagnostics
+{
+    public const string GlobalScope = "Global";
+    public static string CountByLabel(string? label, int count) => $"  {label}: {count:N0}";
+    public static string Written(int count, string reviewStatus, string path) => $"Wrote {count:N0} {reviewStatus} entries to {path}";
+    public static string ReadRows(int count) => $"Read rows: {count:N0}";
+    public static string EmptyTagsSkipped(int count) => $"Null/empty nameTags skipped: {count:N0}";
+    public static string InvalidAddressesSkipped(int count) => $"Invalid address rows skipped: {count:N0}";
+    public static string NoiseExcluded(int count) => $"Excluded by noise rules: {count:N0}";
+    public static string DuplicatesCollapsed(int count) => $"Duplicate rows collapsed: {count:N0}";
+    public const string EntriesByChain = "Entries by chain:";
+    public const string EntriesByKind = "Entries by kind:";
+    public const string TopSourceLabels = "Top source labels:";
+    public const string InvalidReviewStatus = "--review-status must be candidate or reviewed.";
+    public static string OptionValueRequired(string option) => $"{option} requires a value.";
+    public static string RawDirectoryMissing(string path) => $"Raw address-label directory was not found: {path}";
+    public static string NoSupportedFiles(string path) => $"No supported account JSON files were found in {path}.";
+    public static string UnknownChain(string fileName) => $"Cannot infer chain from file name '{fileName}'.";
+    public const string InputFileMissing = "Input file was not found.";
+    public static string InputArrayRequired(string path) => $"{path} must contain a JSON array.";
+}
+
+/// <summary>Supported standalone importer command-line switches.</summary>
+internal static class ImportArguments
+{
+    public const string Output = "--output";
+    public const string Input = "--input";
+    public const string RawDirectory = "--raw-dir";
+    public const string Kind = "--kind";
+    public const string ReviewStatus = "--review-status";
+}
+
+/// <summary>Stable review states emitted in seed documents.</summary>
+internal static class ImportReviewStates
+{
+    public const string Candidate = "candidate";
+    public const string Reviewed = "reviewed";
+}

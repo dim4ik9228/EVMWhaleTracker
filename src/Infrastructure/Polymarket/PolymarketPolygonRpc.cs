@@ -14,30 +14,30 @@ public sealed class PolymarketPolygonRpc(HttpClient http, IOptions<PolymarketPol
     private int _lastInterval;
     private long _retryAfter;
     public async Task VerifyChainAsync(CancellationToken ct)
-    { if (Hex((await CallAsync("eth_chainId", [], ct)).GetString()!) != 137) throw new InvalidDataException("Polymarket endpoint is not Polygon 137."); }
-    public async Task<long> HeadAsync(CancellationToken ct) => Hex((await CallAsync("eth_blockNumber", [], ct)).GetString()!);
+    { if (Hex((await CallAsync(PolymarketWireTokens.ChainId, [], ct)).GetString()!) != 137) throw new InvalidDataException(PolymarketPolygonRpcDiagnostics.PolymarketEndpointIsNotPolygon); }
+    public async Task<long> HeadAsync(CancellationToken ct) => Hex((await CallAsync(PolymarketWireTokens.BlockNumber, [], ct)).GetString()!);
     public async Task<long> FinalizedHeadAsync(CancellationToken ct)
     {
-        var block = await CallAsync("eth_getBlockByNumber", ["finalized", false], ct);
+        var block = await CallAsync(PolymarketWireTokens.BlockByNumber, [PolymarketWireTokens.FinalizedBlock, false], ct);
         if (block.ValueKind != JsonValueKind.Object || !block.TryGetProperty("number", out var number))
-            throw new InvalidDataException("Polygon finalized boundary unavailable; finalization remains paused.");
+            throw new InvalidDataException(PolymarketPolygonRpcDiagnostics.FinalizedBoundaryUnavailable);
         return Hex(number.GetString()!);
     }
     public async Task<PolymarketChainBlock> BlockAsync(long number, CancellationToken ct)
     {
-        var b = await CallAsync("eth_getBlockByNumber", [Quantity(number), false], ct);
+        var b = await CallAsync(PolymarketWireTokens.BlockByNumber, [Quantity(number), false], ct);
         return new(Hex(b.GetProperty("number").GetString()!), b.GetProperty("hash").GetString()!.ToLowerInvariant(),
             b.GetProperty("parentHash").GetString()!.ToLowerInvariant(), DateTimeOffset.FromUnixTimeSeconds(Hex(b.GetProperty("timestamp").GetString()!)));
     }
     public async Task<IReadOnlyList<PolymarketChainLog>> LogsAsync(object filter, CancellationToken ct)
     {
-        var result = await CallAsync("eth_getLogs", [filter], ct);
-        if (result.ValueKind != JsonValueKind.Array) throw new InvalidDataException("Invalid Polygon logs response.");
+        var result = await CallAsync(PolymarketWireTokens.Logs, [filter], ct);
+        if (result.ValueKind != JsonValueKind.Array) throw new InvalidDataException(PolymarketPolygonRpcDiagnostics.InvalidPolygonLogsResponse);
         return result.EnumerateArray().Select(ParseLog).ToArray();
     }
     private async Task<JsonElement> CallAsync(string method, object[] parameters, CancellationToken ct)
     {
-        if (!options.Value.Enabled) throw new InvalidOperationException("Polygon acquisition is off.");
+        if (!options.Value.Enabled) throw new InvalidOperationException(PolymarketPolygonRpcDiagnostics.PolygonAcquisitionIsOff);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(options.Value.TimeoutSeconds));
         await _requestGate.WaitAsync(timeout.Token);
@@ -47,7 +47,7 @@ public sealed class PolymarketPolygonRpc(HttpClient http, IOptions<PolymarketPol
             if (delay > 0) await Task.Delay(TimeSpan.FromMilliseconds(delay), timeout.Token);
             _lastRequest = Environment.TickCount64;
             // Log queries consume substantially more provider credits than block/header reads.
-            _lastInterval = method == "eth_getLogs" ? Math.Max(1000, options.Value.RpcMinimumIntervalMilliseconds)
+            _lastInterval = method == PolymarketWireTokens.Logs ? Math.Max(1000, options.Value.RpcMinimumIntervalMilliseconds)
                 : options.Value.RpcMinimumIntervalMilliseconds;
             return await SendCoreAsync(method, parameters, timeout.Token);
         }
@@ -63,24 +63,24 @@ public sealed class PolymarketPolygonRpc(HttpClient http, IOptions<PolymarketPol
             var wait = response.Headers.RetryAfter?.Delta
                 ?? (response.Headers.RetryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : TimeSpan.FromSeconds(10));
             _retryAfter = Environment.TickCount64 + (long)Math.Clamp(wait.TotalMilliseconds, 1000, 60000);
-            throw new HttpRequestException("Polygon provider throttled; shared RPC cooldown is active.", null, response.StatusCode);
+            throw new HttpRequestException(PolymarketPolygonRpcDiagnostics.ProviderThrottled, null, response.StatusCode);
         }
-        if ((int)response.StatusCode == 413 && method == "eth_getLogs") throw new PolymarketLogRangeException();
-        if (!response.IsSuccessStatusCode) throw new InvalidDataException($"Polygon provider HTTP {(int)response.StatusCode}; check network access and credentials.");
+        if ((int)response.StatusCode == 413 && method == PolymarketWireTokens.Logs) throw new PolymarketLogRangeException();
+        if (!response.IsSuccessStatusCode) throw new InvalidDataException(PolymarketPolygonRpcDiagnostics.ProviderHttpFailure((int)response.StatusCode));
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var buffer = new MemoryStream();
         var bytes = new byte[8192]; int count;
         while ((count = await stream.ReadAsync(bytes, ct)) != 0)
-        { if (buffer.Length + count > options.Value.MaximumResponseBytes) { if (method == "eth_getLogs") throw new PolymarketLogRangeException(); throw new InvalidDataException("Polygon response exceeds configured limit."); } buffer.Write(bytes, 0, count); }
+        { if (buffer.Length + count > options.Value.MaximumResponseBytes) { if (method == PolymarketWireTokens.Logs) throw new PolymarketLogRangeException(); throw new InvalidDataException(PolymarketPolygonRpcDiagnostics.PolygonResponseExceedsConfiguredLimit); } buffer.Write(bytes, 0, count); }
         using var json = JsonDocument.Parse(buffer.ToArray());
         if (json.RootElement.TryGetProperty("error", out var error) && error.ValueKind != JsonValueKind.Null)
         {
             var code = error.TryGetProperty("code", out var c) && c.TryGetInt32(out var value) ? value : 0;
             var text = error.TryGetProperty("message", out var msg) ? msg.GetString() ?? "" : "";
-            if (method == "eth_getLogs" && (text.Contains("more than", StringComparison.OrdinalIgnoreCase)
-                || text.Contains("block range", StringComparison.OrdinalIgnoreCase) || text.Contains("response size", StringComparison.OrdinalIgnoreCase)))
+            if (method == PolymarketWireTokens.Logs && (text.Contains(PolymarketPolygonRpcDiagnostics.MoreThan, StringComparison.OrdinalIgnoreCase)
+                || text.Contains(PolymarketPolygonRpcDiagnostics.BlockRange, StringComparison.OrdinalIgnoreCase) || text.Contains(PolymarketPolygonRpcDiagnostics.ResponseSize, StringComparison.OrdinalIgnoreCase)))
                 throw new PolymarketLogRangeException();
-            throw new InvalidDataException($"Polygon {method} rejected (RPC code {code}); recovery remains pending.");
+            throw new InvalidDataException(PolymarketPolygonRpcDiagnostics.ProviderRpcFailure(method, code));
         }
         return json.RootElement.GetProperty("result").Clone();
     }

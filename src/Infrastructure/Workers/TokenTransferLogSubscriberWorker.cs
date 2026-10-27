@@ -47,7 +47,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
         if (string.IsNullOrWhiteSpace(_network.BuildWebSocketRpcUrl()))
         {
             _logger.LogWarning(
-                "Token transfer log subscriber for {Chain} is disabled because WebSocketRpcUrl is not configured.",
+                TokenTransferLogSubscriberWorkerDiagnostics.SubscriberDisabled,
                 _network.Chain);
             return;
         }
@@ -73,7 +73,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
             {
                 _logger.LogDebug(
                     ex,
-                    "Token transfer log websocket subscription dropped for {Chain}. Reconnecting after delay.",
+                    TokenTransferLogSubscriberWorkerDiagnostics.SubscriptionDropped,
                     _network.Chain);
                 await Task.Delay(_network.WebSocketReconnectDelay, stoppingToken);
             }
@@ -81,7 +81,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
             {
                 _logger.LogWarning(
                     ex,
-                    "Token transfer log websocket subscription dropped for {Chain}. Reconnecting after delay.",
+                    TokenTransferLogSubscriberWorkerDiagnostics.SubscriptionDropped,
                     _network.Chain);
                 await Task.Delay(_network.WebSocketReconnectDelay, stoppingToken);
             }
@@ -136,7 +136,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
             }
 
             _logger.LogInformation(
-                "Subscribed to ERC-20 transfer logs on {Chain} for {TrackedAddressCount} tracked wallets using {FilterCount} websocket filters.",
+                TokenTransferLogSubscriberWorkerDiagnostics.SubscribedToERCTransferLogsOnForTracked,
                 _network.Chain,
                 trackedAddresses.Count,
                 filters.Count);
@@ -149,7 +149,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
                 if (completedTask == cacheChangeTask)
                 {
                     await cacheChangeTask;
-                    _logger.LogDebug("Refreshing ERC-20 transfer log subscriptions for {Chain} after tracked address cache changed.", _network.Chain);
+                    _logger.LogDebug(TokenTransferLogSubscriberWorkerDiagnostics.SubscriptionsRefreshing, _network.Chain);
                     break;
                 }
 
@@ -186,7 +186,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogDebug(ex, "Ignoring token transfer log unsubscribe failure for {Chain}.", _network.Chain);
+                    _logger.LogDebug(ex, TokenTransferLogSubscriberWorkerDiagnostics.UnsubscribeFailed, _network.Chain);
                 }
             }
 
@@ -196,7 +196,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Ignoring token transfer log websocket stop failure for {Chain}.", _network.Chain);
+                _logger.LogDebug(ex, TokenTransferLogSubscriberWorkerDiagnostics.WebSocketStopFailed, _network.Chain);
             }
         }
     }
@@ -248,7 +248,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
     }
 
     private static bool IsExpectedWebSocketDrop(Exception exception)
-        => exception is RpcResponseException { Message: "Client connection error" };
+        => exception is RpcResponseException { Message: TokenTransferLogSubscriberWorkerDiagnostics.ClientConnectionError };
 
     private sealed class ChannelObserver<T> : IObserver<T>
     {

@@ -10,7 +10,7 @@ public sealed class Result<T> : Result
 
     public T Value => IsSuccess
         ? _value!
-        : throw new InvalidOperationException("Cannot access the value of a failed result.");
+        : throw new InvalidOperationException(ResultOfTDiagnostics.FailedValueAccess);
 
     private Result(T value) : base(true, Error.None)
     {

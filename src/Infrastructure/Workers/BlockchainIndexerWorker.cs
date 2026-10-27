@@ -50,7 +50,7 @@ public sealed class BlockchainIndexerWorker : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Blockchain websocket stream dropped. Falling back to RPC polling.");
+                    _logger.LogWarning(ex, BlockchainIndexerWorkerDiagnostics.WebSocketFallback);
                     useWebSocket = false;
                     inWebSocketFallback = true;
                 }
@@ -133,11 +133,11 @@ public sealed class BlockchainIndexerWorker : BackgroundService
             if (block is not null)
             {
                 await _channels.RawBlockDataChannel.Writer.WriteAsync(block, cancellationToken);
-                _logger.LogInformation("Published block {BlockNumber} to the processing pipeline at {Timestamp}.", currentBlockNumber, DateTime.UtcNow);
+                _logger.LogInformation(BlockchainIndexerWorkerDiagnostics.PublishedBlockToTheProcessingPipelineAt, currentBlockNumber, DateTime.UtcNow);
             }
             else
             {
-                _logger.LogWarning("Block {BlockNumber} could not be loaded and was skipped.", currentBlockNumber);
+                _logger.LogWarning(BlockchainIndexerWorkerDiagnostics.BlockCouldNotBeLoadedAndWasSkipped, currentBlockNumber);
             }
 
             currentBlockNumber++;

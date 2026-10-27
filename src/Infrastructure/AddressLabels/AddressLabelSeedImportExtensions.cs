@@ -14,22 +14,22 @@ public static class AddressLabelSeedImportExtensions
 
         if (args.Length < 2)
         {
-            Console.WriteLine("Usage: import-address-labels <json-path> [--dry-run] [--allow-candidate]");
+            Console.WriteLine(AddressLabelSeedImportExtensionsDiagnostics.Usage);
             Environment.ExitCode = 1;
             return;
         }
 
         var path = Path.GetFullPath(args[1]);
-        var dryRun = args.Any(arg => string.Equals(arg, "--dry-run", StringComparison.OrdinalIgnoreCase));
-        var allowCandidate = args.Any(arg => string.Equals(arg, "--allow-candidate", StringComparison.OrdinalIgnoreCase));
+        var dryRun = args.Any(arg => string.Equals(arg, AddressLabelSeedImportExtensionsDiagnostics.DryRunOption, StringComparison.OrdinalIgnoreCase));
+        var allowCandidate = args.Any(arg => string.Equals(arg, AddressLabelSeedImportExtensionsDiagnostics.AllowCandidateOption, StringComparison.OrdinalIgnoreCase));
 
         var report = await serviceProvider.ImportAddressLabelSeedAsync(path, dryRun, allowCandidate, cancellationToken);
 
-        Console.WriteLine(dryRun ? "Address label import dry run complete." : "Address label import complete.");
-        Console.WriteLine($"Inserted: {report.Inserted}");
-        Console.WriteLine($"Updated: {report.Updated}");
-        Console.WriteLine($"Skipped: {report.Skipped}");
-        Console.WriteLine($"Invalid: {report.Invalid}");
+        Console.WriteLine(dryRun ? AddressLabelSeedImportExtensionsDiagnostics.AddressLabelImportDryRunComplete : AddressLabelSeedImportExtensionsDiagnostics.AddressLabelImportComplete);
+        Console.WriteLine(AddressLabelSeedImportExtensionsDiagnostics.Inserted(report.Inserted));
+        Console.WriteLine(AddressLabelSeedImportExtensionsDiagnostics.Updated(report.Updated));
+        Console.WriteLine(AddressLabelSeedImportExtensionsDiagnostics.Skipped(report.Skipped));
+        Console.WriteLine(AddressLabelSeedImportExtensionsDiagnostics.Invalid(report.Invalid));
 
         foreach (var message in report.Messages)
         {

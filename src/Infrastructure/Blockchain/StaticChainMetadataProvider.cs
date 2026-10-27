@@ -27,5 +27,5 @@ public sealed class StaticChainMetadataProvider : IChainMetadataProvider
     public ChainMetadata Get(SupportedChain chain)
         => Metadata.TryGetValue(chain, out var metadata)
             ? metadata
-            : throw new InvalidOperationException($"Chain metadata is not configured for {chain}.");
+            : throw new InvalidOperationException(StaticChainMetadataProviderDiagnostics.ChainNotConfigured(chain));
 }

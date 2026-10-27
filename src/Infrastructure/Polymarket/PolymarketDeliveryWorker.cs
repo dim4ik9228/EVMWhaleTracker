@@ -1,3 +1,4 @@
+using Domain.Common;
 using System.Text.Json;
 using Application.Polymarket;
 using Domain.Entities;
@@ -26,14 +27,14 @@ public sealed class PolymarketDeliveryWorker(IServiceScopeFactory scopes, IOptio
             {
                 using var scope = scopes.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var now = DateTimeOffset.UtcNow;
-                var due = db.Set<PolymarketDelivery>().Where(x => x.State == "Pending" && x.DueAt <= now).Select(x => x.UserId).Distinct();
+                var due = db.Set<PolymarketDelivery>().Where(x => x.State == RuntimeStates.Delivery.Pending && x.DueAt <= now).Select(x => x.UserId).Distinct();
                 var users = await due.Where(x => x > _lastUser).OrderBy(x => x).Take(4).ToArrayAsync(ct);
                 if (users.Length == 0) users = await due.OrderBy(x => x).Take(4).ToArrayAsync(ct);
                 if (users.Length != 0) _lastUser = users[^1];
                 await Task.WhenAll(users.Select(user => SendAsync(user, ct)));
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
-            catch (Exception ex) { logger.LogError(ex, "Polymarket outbox scheduling failed"); }
+            catch (Exception ex) { logger.LogError(ex, PolymarketDeliveryWorkerDiagnostics.PolymarketOutboxSchedulingFailed); }
             await Task.Delay(500, ct);
         }
     }
@@ -48,7 +49,7 @@ public sealed class PolymarketDeliveryWorker(IServiceScopeFactory scopes, IOptio
         try
         {
             var now = DateTimeOffset.UtcNow;
-            var delivery = await db.Set<PolymarketDelivery>().Where(x => x.UserId == user && x.State == "Pending" && x.DueAt <= now)
+            var delivery = await db.Set<PolymarketDelivery>().Where(x => x.UserId == user && x.State == RuntimeStates.Delivery.Pending && x.DueAt <= now)
                 .OrderBy(x => x.DueAt).FirstOrDefaultAsync(ct);
             if (delivery is null) return;
             var source = await db.Set<PolymarketEvent>().AsNoTracking().SingleAsync(x => x.Id == delivery.EventId, ct);
@@ -61,17 +62,17 @@ public sealed class PolymarketDeliveryWorker(IServiceScopeFactory scopes, IOptio
                 var canonical = await db.Set<PolymarketEvent>().AsNoTracking().AnyAsync(x => x.Id == source.Id && x.Canonical, token);
                 return wallet is not null && canonical && setting?.Enabled == true && !setting.NeedsAttention
                     && setting.Generation == delivery.Generation && setting.SourceAddress == source.SourceAddress
-                    && (activity.Action == "CORRECTION" || setting.ActivationBlock < source.BlockNumber)
-                    && (activity.Action is "REDEEM" or "CORRECTION" || activity.CashValue is { } cash && cash >= setting.MinimumTradeValue);
+                    && (activity.Action == PolymarketTokens.Actions.Correction || setting.ActivationBlock < source.BlockNumber)
+                    && (activity.Action is PolymarketTokens.Actions.Redeem or PolymarketTokens.Actions.Correction || activity.CashValue is { } cash && cash >= setting.MinimumTradeValue);
             }
-            if (!await Eligible(ct)) { delivery.State = "Cancelled"; await db.SaveChangesAsync(ct); return; }
+            if (!await Eligible(ct)) { delivery.State = RuntimeStates.Delivery.Cancelled; await db.SaveChangesAsync(ct); return; }
             var wallet = await db.TrackedWallets.AsNoTracking().SingleAsync(x => x.Id == delivery.WalletId && x.UserId == user, ct);
             var sent = false;
             try { sent = await sender.SendAsync(user, new(wallet.Id, wallet.Alias ?? wallet.Address.Value, activity), Eligible, ct); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception ex) { logger.LogWarning("Polymarket recipient attempt failed ({FailureType})", ex.GetType().Name); }
+            catch (Exception ex) { logger.LogWarning(PolymarketDeliveryWorkerDiagnostics.PolymarketRecipientAttemptFailed, ex.GetType().Name); }
             delivery.Attempts++;
-            delivery.State = sent ? "Sent" : !await Eligible(ct) ? "Cancelled" : delivery.Attempts >= 5 ? "Failed" : "Pending";
+            delivery.State = sent ? RuntimeStates.Delivery.Sent : !await Eligible(ct) ? RuntimeStates.Delivery.Cancelled : delivery.Attempts >= 5 ? RuntimeStates.Delivery.Failed : RuntimeStates.Delivery.Pending;
             delivery.DueAt = DateTimeOffset.UtcNow.AddSeconds(Math.Min(300, Math.Pow(2, delivery.Attempts) * 5));
             await db.SaveChangesAsync(ct);
         }

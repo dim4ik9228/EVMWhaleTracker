@@ -33,7 +33,7 @@ public sealed class NotificationAggregationWorker : BackgroundService
         ArgumentNullException.ThrowIfNull(logger);
         if (debounceInterval <= TimeSpan.Zero)
         {
-            throw new ArgumentOutOfRangeException(nameof(debounceInterval), "Debounce interval must be positive.");
+            throw new ArgumentOutOfRangeException(nameof(debounceInterval), NotificationAggregationWorkerDiagnostics.DebounceIntervalMustBePositive);
         }
 
         _channels = channels;
@@ -102,7 +102,7 @@ public sealed class NotificationAggregationWorker : BackgroundService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to aggregate notification for transaction {TransactionHash}.", key.TransactionHash);
+            _logger.LogError(ex, NotificationAggregationWorkerDiagnostics.AggregationFailed, key.TransactionHash);
         }
     }
 
@@ -121,7 +121,7 @@ public sealed class NotificationAggregationWorker : BackgroundService
     {
         await _channels.AggregatedNotificationPayloadChannel.Writer.WriteAsync(payload, cancellationToken);
         _logger.LogDebug(
-            "Aggregated {LineCount} notification lines for chat {ChatId} and transaction {TransactionHash}.",
+            NotificationAggregationWorkerDiagnostics.NotificationAggregated,
             payload.Lines.Count,
             payload.TelegramUserId,
             payload.TransactionHash);

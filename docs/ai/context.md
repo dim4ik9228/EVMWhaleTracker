@@ -30,6 +30,8 @@ Native transfer tracking is currently disabled at runtime. The native block-scan
 
 ## Important Constraints
 
+Runtime errors, messages and semantic string tokens use named catalogs; see [conventions](conventions.md#named-errors-and-runtime-strings) and the [refactor record](../plans/named-errors-and-string-catalogs.md). Domain's `Errors` catalog owns entity/value-object invariants. Application owns use-case/port catalogs (`PolymarketErrors`, `HyperliquidErrors`, `AssetPriceErrors`, `TokenMetadataErrors`), while Infrastructure owns adapter-specific seed-import errors; see [error ownership](../plans/error-catalog-layer-ownership.md). Presentation copy stays in Telegram text catalogs, and persisted/protocol/callback values retain their existing representation. This structural cleanup does not change database schema or tracking behavior.
+
 - Do not reintroduce per-transaction receipt fetching for token detection.
 - Do not poll `eth_getLogs` per block for quiet wallets.
 - Prefer websocket log subscriptions for token transfers.

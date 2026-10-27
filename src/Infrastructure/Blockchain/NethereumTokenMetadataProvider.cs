@@ -15,6 +15,8 @@ public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDi
     private static readonly TimeSpan SuccessCacheDuration = TimeSpan.FromHours(12);
     private static readonly TimeSpan FailureCacheDuration = TimeSpan.FromMinutes(10);
 
+    private const string FallbackSymbol = "TOKEN";
+
     private const string Erc20MetadataAbi =
         """
         [
@@ -24,9 +26,6 @@ public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDi
         ]
         """;
 
-    private static readonly Error MetadataUnavailable = Error.Validation(
-        "TokenMetadata.Unavailable",
-        "Token metadata could not be resolved.");
 
     private readonly IReadOnlyDictionary<SupportedChain, Web3> _web3ByChain;
     private readonly IMemoryCache _cache;
@@ -66,7 +65,7 @@ public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDi
 
         if (web3ByChain.Count == 0)
         {
-            throw new InvalidOperationException("At least one blockchain network RPC endpoint must be configured for token metadata resolution.");
+            throw new InvalidOperationException(NethereumTokenMetadataProviderDiagnostics.NetworkEndpointRequired);
         }
 
         _web3ByChain = web3ByChain;
@@ -80,7 +79,7 @@ public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDi
     {
         if (!_web3ByChain.TryGetValue(chain, out var web3))
         {
-            return Result<TokenMetadata>.Failure(MetadataUnavailable);
+            return Result<TokenMetadata>.Failure(TokenMetadataErrors.Unavailable);
         }
 
         if (StaticTokenMetadataCatalog.TryGet(chain, tokenContractAddress, out var staticMetadata))
@@ -88,7 +87,7 @@ public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDi
             return Result<TokenMetadata>.Success(staticMetadata);
         }
 
-        var cacheKey = $"token-metadata:{chain}:{tokenContractAddress.ToLowerInvariant()}";
+        var cacheKey = BuildCacheKey(chain, tokenContractAddress.ToLowerInvariant());
         if (_cache.TryGetValue<CachedMetadataLookup>(cacheKey, out var cachedLookup) && cachedLookup is not null)
         {
             return cachedLookup.ToResult();
@@ -97,26 +96,26 @@ public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDi
         try
         {
             var contract = web3.Eth.GetContract(Erc20MetadataAbi, tokenContractAddress);
-            var symbolResult = await TryCallStringAsync(contract.GetFunction("symbol"), "TOKEN");
+            var symbolResult = await TryCallStringAsync(contract.GetFunction("symbol"), FallbackSymbol);
             var nameResult = await TryCallStringAsync(contract.GetFunction("name"), null);
             var decimalsResult = await TryCallByteAsync(contract.GetFunction("decimals"), 18);
 
             if (symbolResult.UsedFallback && decimalsResult.UsedFallback)
             {
                 _logger.LogWarning(
-                    "Failed to resolve required token metadata for {TokenContractAddress} on {Chain}; suppressing retries for {FailureCacheDuration}.",
+                    NethereumTokenMetadataProviderDiagnostics.RequiredMetadataUnavailable,
                     tokenContractAddress,
                     chain,
                     FailureCacheDuration);
 
-                _cache.Set(cacheKey, CachedMetadataLookup.Failure(MetadataUnavailable), FailureCacheDuration);
-                return Result<TokenMetadata>.Failure(MetadataUnavailable);
+                _cache.Set(cacheKey, CachedMetadataLookup.Failure(TokenMetadataErrors.Unavailable), FailureCacheDuration);
+                return Result<TokenMetadata>.Failure(TokenMetadataErrors.Unavailable);
             }
 
             var metadata = new TokenMetadata(
                 chain,
                 tokenContractAddress,
-                string.IsNullOrWhiteSpace(symbolResult.Value) ? "TOKEN" : symbolResult.Value.Trim(),
+                string.IsNullOrWhiteSpace(symbolResult.Value) ? FallbackSymbol : symbolResult.Value.Trim(),
                 string.IsNullOrWhiteSpace(nameResult.Value) ? null : nameResult.Value.Trim(),
                 decimalsResult.Value);
 
@@ -125,9 +124,9 @@ public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDi
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to resolve token metadata for {TokenContractAddress} on {Chain}.", tokenContractAddress, chain);
-            _cache.Set(cacheKey, CachedMetadataLookup.Failure(MetadataUnavailable), FailureCacheDuration);
-            return Result<TokenMetadata>.Failure(MetadataUnavailable);
+            _logger.LogWarning(ex, NethereumTokenMetadataProviderDiagnostics.MetadataLookupFailed, tokenContractAddress, chain);
+            _cache.Set(cacheKey, CachedMetadataLookup.Failure(TokenMetadataErrors.Unavailable), FailureCacheDuration);
+            return Result<TokenMetadata>.Failure(TokenMetadataErrors.Unavailable);
         }
     }
 
@@ -181,4 +180,5 @@ public sealed class NethereumTokenMetadataProvider : ITokenMetadataProvider, IDi
 
         public static MetadataCallResult<T> Fallback(T value) => new(value, true);
     }
+    private static string BuildCacheKey(SupportedChain chain, string address) => $"token-metadata:{chain}:{address}";
 }

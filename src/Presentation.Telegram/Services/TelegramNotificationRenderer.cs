@@ -1,3 +1,5 @@
+using Presentation.Telegram.Commands;
+using Domain.Common;
 using System.Globalization;
 using System.Text;
 using Application.Abstractions;
@@ -32,7 +34,7 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
             notification.TrackedWalletDisplayText,
             chainMetadata.GetAddressUrl(notification.TrackedWalletAddress));
 
-        var transactionLink = Link("Tx hash", chainMetadata.GetTransactionUrl(notification.TransactionHash));
+        var transactionLink = Link(TelegramNotificationRendererText.TxHash, chainMetadata.GetTransactionUrl(notification.TransactionHash));
         var lines = new List<string>();
         foreach (var line in notification.Lines.Take(MaxRenderedTransferLines))
         {
@@ -41,18 +43,18 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
 
         if (notification.Lines.Count > MaxRenderedTransferLines)
         {
-            lines.Add(EscapeText($"...and {notification.Lines.Count - MaxRenderedTransferLines} more transfers"));
+            lines.Add(EscapeText(TelegramNotificationRendererText.AdditionalTransfers(notification.Lines.Count - MaxRenderedTransferLines)));
         }
 
         var header = $"{trackedWalletLink} \\| {EscapeText(chainMetadata.ShortName)}";
         if (!string.IsNullOrWhiteSpace(botUsername))
         {
-            header += $" \\| {Link("✏️", BuildEditDeepLink(botUsername, notification.TrackedWalletId))}";
+            header += $" \\| {Link(TelegramNotificationRendererText.EditIcon, BuildEditDeepLink(botUsername, notification.TrackedWalletId))}";
         }
 
         var text =
-            $"{header}\n" +
-            $"{string.Join('\n', lines)}\n" +
+            TelegramNotificationRendererText.Line(header) +
+            TelegramNotificationRendererText.Line(string.Join('\n', lines)) +
             transactionLink;
 
         return new TelegramRenderedMessage(text, ParseMode.MarkdownV2);
@@ -63,16 +65,16 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
         ChainMetadata chainMetadata)
     {
         var counterparty = string.IsNullOrWhiteSpace(line.CounterpartyAddress)
-            ? EscapeText("unknown")
+            ? EscapeText(TelegramNotificationRendererText.Unknown)
             : Link(line.CounterpartyDisplayText, chainMetadata.GetAddressUrl(line.CounterpartyAddress));
 
-        var counterpartyRole = line.Operation == NotificationOperation.Received ? "From" : "To";
+        var counterpartyRole = line.Operation == NotificationOperation.Received ? TelegramNotificationRendererText.From : TelegramNotificationRendererText.To;
         var operationText = line.Operation switch
         {
-            NotificationOperation.Received => "Received",
-            NotificationOperation.Sent => "Sent",
-            NotificationOperation.SelfTransfer => "Self",
-            _ => "Activity"
+            NotificationOperation.Received => TelegramNotificationRendererText.Received,
+            NotificationOperation.Sent => TelegramNotificationRendererText.Sent,
+            NotificationOperation.SelfTransfer => TelegramNotificationRendererText.Self,
+            _ => TelegramNotificationRendererText.Activity
         };
 
         var amount = EscapeText(FormatAmount(line.Amount));
@@ -83,7 +85,7 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
             ? $" {EscapeText($"(~{FormatUsd(line.UsdValue.Value)})")}"
             : string.Empty;
 
-        return $"{EscapeText(operationText)}: {amount} {symbol}{usdPart} {EscapeText(counterpartyRole)}: {counterparty}";
+        return TelegramNotificationRendererText.TransferLine(EscapeText(operationText), amount, symbol, usdPart, EscapeText(counterpartyRole), counterparty);
     }
 
     private static string Link(string visibleText, string url)
@@ -116,7 +118,7 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
     private static string BuildEditDeepLink(string botUsername, Guid trackedWalletId)
     {
         var normalizedBotUsername = botUsername.Trim().TrimStart('@');
-        return $"https://t.me/{Uri.EscapeDataString(normalizedBotUsername)}?start=edit_wallet_{trackedWalletId:N}";
+        return $"https://t.me/{Uri.EscapeDataString(normalizedBotUsername)}?start={TelegramInteractionTokens.EditWalletPrefix}{trackedWalletId:N}";
     }
 
     private static string FormatAmount(decimal value)

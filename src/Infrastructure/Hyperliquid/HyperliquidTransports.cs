@@ -34,8 +34,8 @@ public sealed class HyperliquidSocket : IHyperliquidSocket
         while (true)
         {
             var result = await _socket.ReceiveAsync(chunk.AsMemory(), ct);
-            if (result.MessageType != WebSocketMessageType.Text) throw new IOException("Hyperliquid socket closed or sent a non-text frame.");
-            if (buffer.Length + result.Count > maximumBytes) throw new IOException("Hyperliquid frame exceeds configured limit.");
+            if (result.MessageType != WebSocketMessageType.Text) throw new IOException(HyperliquidTransportsDiagnostics.HyperliquidSocketClosedOrSentANonText);
+            if (buffer.Length + result.Count > maximumBytes) throw new IOException(HyperliquidTransportsDiagnostics.HyperliquidFrameExceedsConfiguredLimit);
             buffer.Write(chunk, 0, result.Count);
             if (result.EndOfMessage) return new UTF8Encoding(false, true).GetString(buffer.ToArray());
         }
@@ -79,7 +79,7 @@ public sealed class HyperliquidInfoClient(HttpClient client, IOptions<Hyperliqui
                 var retry = response.Headers.RetryAfter?.Delta
                     ?? (response.Headers.RetryAfter?.Date is { } date ? date - DateTimeOffset.UtcNow : TimeSpan.FromSeconds(30));
                 await Task.Delay(retry > TimeSpan.Zero ? retry : TimeSpan.Zero, ct);
-                throw new HttpRequestException("Hyperliquid HTTP throttled recovery.");
+                throw new HttpRequestException(HyperliquidTransportsDiagnostics.HyperliquidHTTPThrottledRecovery);
             }
             response.EnsureSuccessStatusCode();
             // Bound HTTP payloads independently of the websocket limit.
@@ -89,7 +89,7 @@ public sealed class HyperliquidInfoClient(HttpClient client, IOptions<Hyperliqui
             int count;
             while ((count = await stream.ReadAsync(chunk, requestTimeout.Token)) > 0)
             {
-                if (bytes.Length + count > 8388608) throw new IOException("Hyperliquid HTTP response too large.");
+                if (bytes.Length + count > 8388608) throw new IOException(HyperliquidTransportsDiagnostics.HyperliquidHTTPResponseTooLarge);
                 bytes.Write(chunk, 0, count);
             }
             var text = Encoding.UTF8.GetString(bytes.ToArray());

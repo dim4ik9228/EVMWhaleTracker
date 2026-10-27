@@ -1,3 +1,4 @@
+using Domain.Common;
 namespace Infrastructure.Hyperliquid;
 
 /// <summary>Public HyperCore adapter bounds. Disabled configuration opens no provider connections.</summary>
@@ -37,5 +38,5 @@ public sealed class HyperliquidChangeSignal
     public void AcceptedEvent() => Interlocked.Increment(ref _accepted);
     public void DuplicateEvent() => Interlocked.Increment(ref _duplicates);
     public void Changed() => Interlocked.Increment(ref _version);
-    public string Status { get; set; } = "Connecting";
+    public string Status { get; set; } = RuntimeStates.Checkpoint.Connecting;
 }

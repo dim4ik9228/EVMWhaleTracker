@@ -50,7 +50,7 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
         }
         else
         {
-            throw new InvalidOperationException("Either HttpRpcUrl or WebSocketRpcUrl must be configured for the blockchain indexer.");
+            throw new InvalidOperationException(NethereumBlockchainBlockSourceDiagnostics.RpcEndpointRequired);
         }
     }
 
@@ -77,7 +77,7 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
         {
             if (_enableRpcDiagnostics)
             {
-                _logger.LogInformation("Block {BlockNumber} returned no data from RPC.", blockNumber);
+                _logger.LogInformation(NethereumBlockchainBlockSourceDiagnostics.BlockReturnedNoDataFromRPC, blockNumber);
             }
 
             return null;
@@ -110,7 +110,7 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
         {
             stopwatch?.Stop();
             _logger.LogDebug(
-                "Loaded block {BlockNumber}: transactions={TransactionCount}, elapsedMs={ElapsedMilliseconds}.",
+                NethereumBlockchainBlockSourceDiagnostics.LoadedBlockTransactionsElapsedMs,
                 rawBlockData.BlockNumber,
                 transactions.Count,
                 stopwatch?.ElapsedMilliseconds ?? 0);
@@ -123,7 +123,7 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
     {
         if (string.IsNullOrWhiteSpace(webSocketRpcUrl))
         {
-            throw new InvalidOperationException("WebSocketRpcUrl must be configured to stream new block headers.");
+            throw new InvalidOperationException(NethereumBlockchainBlockSourceDiagnostics.WebSocketEndpointRequired);
         }
 
         var client = new StreamingWebSocketClient(webSocketRpcUrl);
@@ -167,7 +167,7 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Ignoring websocket unsubscribe failure.");
+                _logger.LogDebug(ex, NethereumBlockchainBlockSourceDiagnostics.IgnoringWebsocketUnsubscribeFailure);
             }
 
             try
@@ -176,7 +176,7 @@ public sealed class NethereumBlockchainBlockSource : IBlockchainBlockSource
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Ignoring websocket stop failure.");
+                _logger.LogDebug(ex, NethereumBlockchainBlockSourceDiagnostics.IgnoringWebsocketStopFailure);
             }
 
             client.Dispose();

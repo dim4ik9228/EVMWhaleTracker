@@ -29,7 +29,7 @@ public static class Erc20TransferLogFilterBuilder
 
         if (addressBatchSize <= 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(addressBatchSize), "Address batch size must be positive.");
+            throw new ArgumentOutOfRangeException(nameof(addressBatchSize), Erc20TransferLogFilterBuilderDiagnostics.AddressBatchSizeMustBePositive);
         }
 
         if (trackedAddresses.Count == 0)

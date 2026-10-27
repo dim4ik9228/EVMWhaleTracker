@@ -30,4 +30,23 @@ public sealed class TelegramCallbackDataParserTests
 
         Assert.False(parsed);
     }
+    [Theory]
+    [InlineData("t", TelegramCallbackAction.PolymarketToggle)]
+    [InlineData("b", TelegramCallbackAction.PolymarketBind)]
+    [InlineData("m", TelegramCallbackAction.PolymarketMinimum)]
+    [InlineData("a", TelegramCallbackAction.PolymarketAlias)]
+    [InlineData("s", TelegramCallbackAction.PolymarketSource)]
+    public void TryParse_PreservesPolymarketGenerationCallbacks(string action, TelegramCallbackAction expected)
+    {
+        var wallet = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        var generation = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+        var token = Convert.ToBase64String(generation.ToByteArray()).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var data = $"pm:{action}:{wallet:N}:{token}";
+
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(data) <= 64);
+        Assert.True(TelegramCallbackDataParser.TryParse(data, out var parsed));
+        Assert.Equal(expected, parsed.Action);
+        Assert.Equal(wallet, parsed.WalletId);
+        Assert.Equal(generation, parsed.Generation);
+    }
 }

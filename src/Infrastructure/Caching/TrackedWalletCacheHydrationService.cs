@@ -36,7 +36,7 @@ public sealed class TrackedWalletCacheHydrationService : IHostedService
         var trackedWallets = await repository.ListAllAsync(cancellationToken);
         cache.ReplaceAll(trackedWallets);
 
-        _logger.LogInformation("Hydrated tracked wallet cache with {TrackedWalletCount} wallets.", trackedWallets.Count);
+        _logger.LogInformation(TrackedWalletCacheHydrationServiceDiagnostics.HydratedTrackedWalletCacheWithWallets, trackedWallets.Count);
     }
 
     /// <summary>

@@ -17,9 +17,6 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
     private const string CoinGeckoSource = "CoinGecko";
     private const string DexScreenerSource = "DexScreener";
 
-    private static readonly Error PriceUnavailable = Error.Validation(
-        "AssetPrice.Unavailable",
-        "Asset USD price could not be resolved.");
 
     private readonly HttpClient _httpClient;
     private readonly IMemoryCache _cache;
@@ -51,10 +48,10 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
     {
         if (!_options.Enabled)
         {
-            return Result<AssetUsdPrice>.Failure(PriceUnavailable);
+            return Result<AssetUsdPrice>.Failure(AssetPriceErrors.Unavailable);
         }
 
-        var cacheKey = $"asset-price:{chain}:{tokenContractAddress?.ToLowerInvariant() ?? assetSymbol.ToUpperInvariant()}";
+        var cacheKey = BuildCacheKey(chain, tokenContractAddress?.ToLowerInvariant() ?? assetSymbol.ToUpperInvariant());
         if (_cache.TryGetValue<AssetUsdPrice>(cacheKey, out var cachedPrice) && cachedPrice is not null)
         {
             return Result<AssetUsdPrice>.Success(cachedPrice);
@@ -78,7 +75,7 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
     {
         if (!_options.NativeCoinGeckoIds.TryGetValue(chain, out var coinId))
         {
-            return Result<AssetUsdPrice>.Failure(PriceUnavailable);
+            return Result<AssetUsdPrice>.Failure(AssetPriceErrors.Unavailable);
         }
 
         try
@@ -90,15 +87,15 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
                 !coinElement.TryGetProperty("usd", out var usdElement) ||
                 !usdElement.TryGetDecimal(out var priceUsd))
             {
-                return Result<AssetUsdPrice>.Failure(PriceUnavailable);
+                return Result<AssetUsdPrice>.Failure(AssetPriceErrors.Unavailable);
             }
 
             return Result<AssetUsdPrice>.Success(new AssetUsdPrice(priceUsd, DateTimeOffset.UtcNow, CoinGeckoSource));
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Failed to resolve native USD price for {Chain}.", chain);
-            return Result<AssetUsdPrice>.Failure(PriceUnavailable);
+            _logger.LogDebug(ex, HttpAssetPriceProviderDiagnostics.NativePriceLookupFailed, chain);
+            return Result<AssetUsdPrice>.Failure(AssetPriceErrors.Unavailable);
         }
     }
 
@@ -109,7 +106,7 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
     {
         if (!_options.DexScreenerChainIds.TryGetValue(chain, out var dexChainId))
         {
-            return Result<AssetUsdPrice>.Failure(PriceUnavailable);
+            return Result<AssetUsdPrice>.Failure(AssetPriceErrors.Unavailable);
         }
 
         try
@@ -120,7 +117,7 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
                 !document.RootElement.TryGetProperty("pairs", out var pairsElement) ||
                 pairsElement.ValueKind != JsonValueKind.Array)
             {
-                return Result<AssetUsdPrice>.Failure(PriceUnavailable);
+                return Result<AssetUsdPrice>.Failure(AssetPriceErrors.Unavailable);
             }
 
             foreach (var pair in pairsElement.EnumerateArray())
@@ -139,12 +136,12 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
                 }
             }
 
-            return Result<AssetUsdPrice>.Failure(PriceUnavailable);
+            return Result<AssetUsdPrice>.Failure(AssetPriceErrors.Unavailable);
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Failed to resolve token USD price for {TokenContractAddress} on {Chain}.", tokenContractAddress, chain);
-            return Result<AssetUsdPrice>.Failure(PriceUnavailable);
+            _logger.LogDebug(ex, HttpAssetPriceProviderDiagnostics.TokenPriceLookupFailed, tokenContractAddress, chain);
+            return Result<AssetUsdPrice>.Failure(AssetPriceErrors.Unavailable);
         }
     }
 
@@ -155,4 +152,5 @@ public sealed class HttpAssetPriceProvider : IAssetPriceProvider
         => $"{TrimTrailingSlash(_options.DexScreenerTokenUrl)}/{Uri.EscapeDataString(tokenContractAddress)}";
 
     private static string TrimTrailingSlash(string value) => value.TrimEnd('/');
+    private static string BuildCacheKey(SupportedChain chain, string asset) => $"asset-price:{chain}:{asset}";
 }

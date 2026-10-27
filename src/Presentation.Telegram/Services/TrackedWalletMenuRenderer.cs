@@ -1,3 +1,4 @@
+using Presentation.Telegram.Commands;
 using System.Globalization;
 using System.Net;
 using Application.Abstractions;
@@ -23,26 +24,21 @@ public sealed class TrackedWalletMenuRenderer : ITrackedWalletMenuRenderer
         ArgumentNullException.ThrowIfNull(wallet);
         ArgumentNullException.ThrowIfNull(configuredChains);
 
-        var displayName = string.IsNullOrWhiteSpace(wallet.Alias) ? "Main" : wallet.Alias;
+        var displayName = string.IsNullOrWhiteSpace(wallet.Alias) ? TrackedWalletMenuRendererText.Main : wallet.Alias;
         var text =
-            $"""
-            <b>{HtmlEncode(displayName)}</b>
-            {HtmlEncode(FormatEnabledChains(wallet, configuredChains))}
-            <code>{HtmlEncode(wallet.Address)}</code>
-            Minimum USD: <code>${wallet.MinimumUsdValue.ToString("0.##", CultureInfo.InvariantCulture)}</code>
-            """;
+            TrackedWalletMenuRendererText.Overview(HtmlEncode(displayName), HtmlEncode(FormatEnabledChains(wallet, configuredChains)), HtmlEncode(wallet.Address), wallet.MinimumUsdValue.ToString("0.##", CultureInfo.InvariantCulture));
 
         var walletId = wallet.Id.ToString("N");
         var keyboard = new InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton.WithCallbackData("💵 Min USD", $"tw:v1:m:{walletId}"),
-                InlineKeyboardButton.WithCallbackData("🛰 Networks", $"tw:v1:n:{walletId}")
+                InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.MinUSD, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Minimum}:{walletId}"),
+                InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Networks, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Networks}:{walletId}")
             ],
-            [InlineKeyboardButton.WithCallbackData("Hyperliquid", $"tw:v1:h:{walletId}"), InlineKeyboardButton.WithCallbackData("Polymarket", $"tw:v1:p:{walletId}")],
-            [InlineKeyboardButton.WithCallbackData("✏️ Rename", $"tw:v1:r:{walletId}")],
-            [InlineKeyboardButton.WithCallbackData("🗑 Delete", $"tw:v1:d:{walletId}")],
-            [InlineKeyboardButton.WithCallbackData("↩️ Back", $"tw:v1:b:{walletId}")]
+            [InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Hyperliquid, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Hyperliquid}:{walletId}"), InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Polymarket, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Predictions}:{walletId}")],
+            [InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Rename, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Rename}:{walletId}")],
+            [InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Delete, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Delete}:{walletId}")],
+            [InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Back, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Close}:{walletId}")]
         ]);
 
         return new TelegramMenuMessage(text, ParseMode.Html, keyboard);
@@ -66,24 +62,24 @@ public sealed class TrackedWalletMenuRenderer : ITrackedWalletMenuRenderer
                 .Select(chain =>
                 {
                     var isEnabled = effectiveEnabledChains.Contains(chain.Chain);
-                    var nextEnabled = isEnabled ? "0" : "1";
+                    var nextEnabled = isEnabled ? TelegramInteractionTokens.Callbacks.Disabled : TelegramInteractionTokens.Callbacks.Enabled;
                     var label = $"{(isEnabled ? "✅" : "⬜")} {FormatChainShortName(chain)}";
                     return InlineKeyboardButton.WithCallbackData(
                         label,
-                        $"tw:v1:nt:{walletId}:{(int)chain.Chain}:{nextEnabled}");
+                        $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.NetworkToggle}:{walletId}:{(int)chain.Chain}:{nextEnabled}");
                 })
                 .ToArray())
             .ToList();
 
-        rows.Add([InlineKeyboardButton.WithCallbackData("Deselect All Networks", $"tw:v1:na:{walletId}")]);
+        rows.Add([InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.DeselectAllNetworks, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.DeselectNetworks}:{walletId}")]);
         rows.Add(
         [
-            InlineKeyboardButton.WithCallbackData("❌ Cancel", $"tw:v1:o:{walletId}"),
-            InlineKeyboardButton.WithCallbackData("☑️ Done", $"tw:v1:o:{walletId}")
+            InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Cancel, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Overview}:{walletId}"),
+            InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Done, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Overview}:{walletId}")
         ]);
 
         return new TelegramMenuMessage(
-            "Choose ✅ Networks to add and press ☑️ Done:",
+            TrackedWalletMenuRendererText.NetworksPrompt,
             ParseMode.Html,
             new InlineKeyboardMarkup(rows));
     }
@@ -95,12 +91,9 @@ public sealed class TrackedWalletMenuRenderer : ITrackedWalletMenuRenderer
     {
         ArgumentNullException.ThrowIfNull(wallet);
 
-        var displayName = string.IsNullOrWhiteSpace(wallet.Alias) ? "this wallet" : wallet.Alias;
+        var displayName = string.IsNullOrWhiteSpace(wallet.Alias) ? TrackedWalletMenuRendererText.ThisWallet : wallet.Alias;
         var text =
-            $"""
-            Delete {HtmlEncode(displayName)}?
-            <code>{HtmlEncode(ShortAddress(wallet.Address))}</code>
-            """;
+            TrackedWalletMenuRendererText.DeleteConfirmation(HtmlEncode(displayName), HtmlEncode(ShortAddress(wallet.Address)));
 
         var walletId = wallet.Id.ToString("N");
         return new TelegramMenuMessage(
@@ -109,8 +102,8 @@ public sealed class TrackedWalletMenuRenderer : ITrackedWalletMenuRenderer
             new InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton.WithCallbackData("🗑 Delete", $"tw:v1:dc:{walletId}"),
-                    InlineKeyboardButton.WithCallbackData("❌ Cancel", $"tw:v1:o:{walletId}")
+                    InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Delete, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.DeleteConfirm}:{walletId}"),
+                    InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Cancel, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Overview}:{walletId}")
                 ]
             ]));
     }
@@ -133,7 +126,7 @@ public sealed class TrackedWalletMenuRenderer : ITrackedWalletMenuRenderer
     {
         if (configuredChains.Count == 0)
         {
-            return "No runtime networks configured";
+            return TrackedWalletMenuRendererText.NoRuntimeNetworksConfigured;
         }
 
         var enabledChains = GetEffectiveEnabledChains(wallet, configuredChains);
@@ -147,9 +140,9 @@ public sealed class TrackedWalletMenuRenderer : ITrackedWalletMenuRenderer
     private static string FormatChainShortName(ChainMetadata metadata)
         => metadata.Chain switch
         {
-            SupportedChain.Arbitrum => "ARB",
-            SupportedChain.Bsc => "BNB",
-            SupportedChain.Ethereum => "ETH",
+            SupportedChain.Arbitrum => TrackedWalletMenuRendererText.ArbitrumShortName,
+            SupportedChain.Bsc => TrackedWalletMenuRendererText.BnbShortName,
+            SupportedChain.Ethereum => TrackedWalletMenuRendererText.EthereumShortName,
             _ => metadata.ShortName
         };
 

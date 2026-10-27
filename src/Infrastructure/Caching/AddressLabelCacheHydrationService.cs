@@ -25,7 +25,7 @@ public sealed class AddressLabelCacheHydrationService(
         var labels = await repository.GetEnabledAsync(cancellationToken);
         cache.ReplaceAll(labels);
 
-        logger.LogInformation("Hydrated address label cache with {AddressLabelCount} labels.", labels.Count);
+        logger.LogInformation(AddressLabelCacheHydrationServiceDiagnostics.HydratedAddressLabelCacheWithLabels, labels.Count);
     }
 
     /// <summary>

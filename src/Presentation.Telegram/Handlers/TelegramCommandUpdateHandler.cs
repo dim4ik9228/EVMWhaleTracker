@@ -56,7 +56,7 @@ public sealed class TelegramCommandUpdateHandler(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to process Telegram update {UpdateId}.", update.Id);
+            logger.LogError(ex, TelegramCommandUpdateHandlerText.FailedToProcessTelegramUpdate, update.Id);
             return;
         }
 
@@ -90,7 +90,7 @@ public sealed class TelegramCommandUpdateHandler(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to send Telegram command response for update {UpdateId}.", update.Id);
+            logger.LogError(ex, TelegramCommandUpdateHandlerText.CommandResponseSendFailed, update.Id);
         }
     }
 
@@ -102,7 +102,7 @@ public sealed class TelegramCommandUpdateHandler(
     {
         if (callbackQuery.Message is not { } message || callbackQuery.Data is null)
         {
-            await AnswerCallbackBestEffortAsync(botClient, callbackQuery.Id, "This menu is no longer available.", true, cancellationToken);
+            await AnswerCallbackBestEffortAsync(botClient, callbackQuery.Id, TelegramUiText.MenuUnavailable, true, cancellationToken);
             return;
         }
 
@@ -124,14 +124,14 @@ public sealed class TelegramCommandUpdateHandler(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to process Telegram callback update {UpdateId}.", update.Id);
-            await AnswerCallbackBestEffortAsync(botClient, callbackQuery.Id, "Something went wrong.", true, cancellationToken);
+            logger.LogError(ex, TelegramCommandUpdateHandlerText.FailedToProcessTelegramCallbackUpdate, update.Id);
+            await AnswerCallbackBestEffortAsync(botClient, callbackQuery.Id, TelegramCommandUpdateHandlerText.SomethingWentWrong, true, cancellationToken);
             return;
         }
 
         if (response is null)
         {
-            await AnswerCallbackBestEffortAsync(botClient, callbackQuery.Id, "This menu is no longer available.", true, cancellationToken);
+            await AnswerCallbackBestEffortAsync(botClient, callbackQuery.Id, TelegramUiText.MenuUnavailable, true, cancellationToken);
             return;
         }
 
@@ -172,8 +172,8 @@ public sealed class TelegramCommandUpdateHandler(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to apply Telegram callback response for update {UpdateId}.", update.Id);
-            await AnswerCallbackBestEffortAsync(botClient, callbackQuery.Id, "Something went wrong.", true, cancellationToken);
+            logger.LogError(ex, TelegramCommandUpdateHandlerText.CallbackResponseApplyFailed, update.Id);
+            await AnswerCallbackBestEffortAsync(botClient, callbackQuery.Id, TelegramCommandUpdateHandlerText.SomethingWentWrong, true, cancellationToken);
         }
     }
 
@@ -224,7 +224,7 @@ public sealed class TelegramCommandUpdateHandler(
 
     public Task HandleErrorAsync(ITelegramBotClient botClient, Exception exception, HandleErrorSource source, CancellationToken cancellationToken)
     {
-        logger.LogError(exception, "Telegram update handling failed at {Source}.", source);
+        logger.LogError(exception, TelegramCommandUpdateHandlerText.TelegramUpdateHandlingFailedAt, source);
         return Task.CompletedTask;
     }
 }

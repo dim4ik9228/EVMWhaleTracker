@@ -15,12 +15,12 @@ public class Result
     {
         if (isSuccess && error != Error.None)
         {
-            throw new ArgumentException("A successful result cannot contain an error.", nameof(error));
+            throw new ArgumentException(ResultDiagnostics.SuccessWithError, nameof(error));
         }
 
         if (!isSuccess && error == Error.None)
         {
-            throw new ArgumentException("A failed result must contain an error.", nameof(error));
+            throw new ArgumentException(ResultDiagnostics.FailureWithoutError, nameof(error));
         }
 
         IsSuccess = isSuccess;

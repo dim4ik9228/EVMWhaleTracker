@@ -1,3 +1,4 @@
+using Domain.Common;
 using System.Text.Json;
 using System.Threading.Channels;
 using Application.Hyperliquid;
@@ -18,14 +19,14 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
     ILogger<HyperliquidWorker> logger) : BackgroundService
 {
     internal const long OwnerLock = 74210002;
-    private static readonly string[] Streams = ["userFills", "userNonFundingLedgerUpdates"];
+    private static readonly string[] Streams = [HyperliquidTokens.Streams.Fills, HyperliquidTokens.Streams.Ledger];
     private sealed record SocketFrame(string? Message, TaskCompletionSource? Barrier = null);
     private HyperliquidOptions Options => options.Value;
     private DateTimeOffset _nextConnection;
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!Options.Enabled) return;
-        if (!Options.IsValid()) { signal.Status = "Degraded — invalid configuration"; logger.LogError("Invalid Hyperliquid bounds; source disabled"); return; }
+        if (!Options.IsValid()) { signal.Status = HyperliquidWorkerDiagnostics.DegradedInvalidConfiguration; logger.LogError(HyperliquidWorkerDiagnostics.InvalidHyperliquidBoundsSourceDisabled); return; }
         var attempts = 0;
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -54,7 +55,7 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
-            catch (Exception ex) { signal.Status = "Degraded — reconnecting"; logger.LogWarning(ex, "Hyperliquid source reconnect required"); }
+            catch (Exception ex) { signal.Status = HyperliquidWorkerDiagnostics.DegradedReconnecting; logger.LogWarning(ex, HyperliquidWorkerDiagnostics.HyperliquidSourceReconnectRequired); }
             await Task.Delay(TimeSpan.FromMilliseconds(Math.Min(30000, 1000 * Math.Pow(2, Math.Min(attempts++, 5))) + Random.Shared.Next(250, 1000)), stoppingToken);
         }
     }
@@ -83,15 +84,15 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
             await store.ReleaseUnusedReservationsAsync(ct);
             var addresses = await store.AddressesAsync(ct);
             if (addresses.Count > Options.MaxUniqueWallets)
-            { signal.Status = "Degraded — capacity configuration"; logger.LogError("Core persisted enrollment exceeds configured capacity"); await Task.Delay(5000, ct); continue; }
-            if (addresses.Count == 0) { signal.Status = "Connecting"; await Task.Delay(1000, ct); continue; }
+            { signal.Status = HyperliquidWorkerDiagnostics.DegradedCapacityConfiguration; logger.LogError(HyperliquidWorkerDiagnostics.EnrollmentCapacityExceeded); await Task.Delay(5000, ct); continue; }
+            if (addresses.Count == 0) { signal.Status = RuntimeStates.Checkpoint.Connecting; await Task.Delay(1000, ct); continue; }
             using var epoch = CancellationTokenSource.CreateLinkedTokenSource(ct);
             await using var socket = sockets.Create();
-            signal.Status = "Connecting";
+            signal.Status = RuntimeStates.Checkpoint.Connecting;
             if (_nextConnection > DateTimeOffset.UtcNow) await Task.Delay(_nextConnection - DateTimeOffset.UtcNow, epoch.Token);
             _nextConnection = DateTimeOffset.UtcNow.AddMilliseconds(2200);
             await socket.ConnectAsync(new Uri(Options.WebSocketUrl), epoch.Token);
-            logger.LogInformation("Hyperliquid connected with {UniqueAddresses}/{Capacity} admitted addresses", addresses.Count, Options.MaxUniqueWallets);
+            logger.LogInformation(HyperliquidWorkerDiagnostics.HyperliquidConnectedWithAdmittedAddresses, addresses.Count, Options.MaxUniqueWallets);
             var queue = Channel.CreateBounded<SocketFrame>(new BoundedChannelOptions(Options.QueueCapacity) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true, SingleWriter = false });
             var acknowledged = new HashSet<string>();
             var subscribed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -107,7 +108,7 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
             {
                 foreach (var address in addresses)
                     foreach (var stream in Streams)
-                        await socket.SendAsync(new { method = "subscribe", subscription = Subscription(stream, address) }, epoch.Token);
+                        await socket.SendAsync(new { method = HyperliquidWireTokens.Subscribe, subscription = Subscription(stream, address) }, epoch.Token);
                 // Reader and persistence run before recovery; overlaps are deduplicated durably.
                 recovery = RecoverSubscribedAsync();
                 async Task RecoverSubscribedAsync()
@@ -146,8 +147,8 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
                     using var json = JsonDocument.Parse(message);
                     var root = json.RootElement;
                     var channel = root.GetProperty("channel").GetString();
-                    if (channel == "pong") { lastPong = DateTimeOffset.UtcNow; continue; }
-                    if (channel == "subscriptionResponse")
+                    if (channel == HyperliquidWireTokens.Pong) { lastPong = DateTimeOffset.UtcNow; continue; }
+                    if (channel == HyperliquidWireTokens.SubscriptionResponse)
                     {
                         var sub = root.GetProperty("data").GetProperty("subscription");
                         var user = sub.GetProperty("user").GetString()!.ToLowerInvariant();
@@ -160,9 +161,9 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
                             }
                         continue;
                     }
-                    if (channel == "error") throw new IOException("Hyperliquid rejected subscription.");
-                    if (channel is not ("userFills" or "userNonFundingLedgerUpdates")) continue;
-                    if (!queue.Writer.TryWrite(new SocketFrame(message))) throw new IOException("Hyperliquid durable consumer overloaded; reconnect recovery required.");
+                    if (channel == HyperliquidWireTokens.Error) throw new IOException(HyperliquidWorkerDiagnostics.HyperliquidRejectedSubscription);
+                    if (channel is not (HyperliquidTokens.Streams.Fills or HyperliquidTokens.Streams.Ledger)) continue;
+                    if (!queue.Writer.TryWrite(new SocketFrame(message))) throw new IOException(HyperliquidWorkerDiagnostics.ConsumerOverloaded);
                 }
             }
             async Task HeartbeatAsync()
@@ -170,13 +171,13 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
                 while (true)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(Options.PingSeconds), epoch.Token);
-                    if (DateTimeOffset.UtcNow - lastPong > TimeSpan.FromSeconds(Options.PongTimeoutSeconds)) throw new IOException("Hyperliquid pong deadline exceeded.");
+                    if (DateTimeOffset.UtcNow - lastPong > TimeSpan.FromSeconds(Options.PongTimeoutSeconds)) throw new IOException(HyperliquidWorkerDiagnostics.HyperliquidPongDeadlineExceeded);
                     lock (acknowledged)
                         if (acknowledged.Count != addresses.Count * 2 && DateTimeOffset.UtcNow - connectedAt >= TimeSpan.FromSeconds(Options.PingSeconds))
-                            throw new IOException("Hyperliquid subscriptions not acknowledged.");
-                    await socket.SendAsync(new { method = "ping" }, epoch.Token);
+                            throw new IOException(HyperliquidWorkerDiagnostics.HyperliquidSubscriptionsNotAcknowledged);
+                    await socket.SendAsync(new { method = HyperliquidWireTokens.Ping }, epoch.Token);
                     lock (acknowledged)
-                        logger.LogInformation("Hyperliquid health: desired {DesiredSubscriptions}, acknowledged {AcknowledgedSubscriptions}, pong age {PongAgeSeconds}, accepted {AcceptedEvents}, duplicates {DuplicateEvents}, status {Status}",
+                        logger.LogInformation(HyperliquidWorkerDiagnostics.HealthSummary,
                             addresses.Count * 2, acknowledged.Count, (DateTimeOffset.UtcNow - lastPong).TotalSeconds, signal.Accepted, signal.Duplicates, signal.Status);
                 }
             }
@@ -206,7 +207,7 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
                     var data = root.GetProperty("data");
                     var address = data.GetProperty("user").GetString()!.ToLowerInvariant();
                     if (!addresses.Contains(address)) continue;
-                    var rows = data.GetProperty(stream == "userFills" ? "fills" : "nonFundingLedgerUpdates");
+                    var rows = data.GetProperty(stream == HyperliquidTokens.Streams.Fills ? "fills" : HyperliquidWireTokens.LedgerRows);
                     var snapshot = data.TryGetProperty("isSnapshot", out var snapshotFlag) && snapshotFlag.ValueKind == JsonValueKind.True;
                     foreach (var row in rows.EnumerateArray())
                         await AcceptRowAsync(address, stream, row, markets, epoch.Token, snapshot);
@@ -215,17 +216,17 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
         }
     }
 
-    private static object Subscription(string stream, string address) => stream == "userFills"
+    private static object Subscription(string stream, string address) => stream == HyperliquidTokens.Streams.Fills
         ? new { type = stream, user = address, aggregateByTime = false } : (object)new { type = stream, user = address };
 
     private HashSet<string>? _markets;
     private async Task<HashSet<string>> MarketsAsync(CancellationToken ct)
     {
         if (_markets is not null) return _markets;
-        using var json = JsonDocument.Parse(await info.QueryAsync(new { type = "meta" }, 20, ct));
+        using var json = JsonDocument.Parse(await info.QueryAsync(new { type = HyperliquidWireTokens.Metadata }, 20, ct));
         // Native meta defaults to the original USDC perp dex; explicitly reject a different collateral index.
         if (!json.RootElement.TryGetProperty("collateralToken", out var collateral) || collateral.GetInt32() != 0)
-            throw new IOException("Unsupported Hyperliquid collateral metadata.");
+            throw new IOException(HyperliquidWorkerDiagnostics.UnsupportedHyperliquidCollateralMetadata);
         return _markets = json.RootElement.GetProperty("universe").EnumerateArray().Select(x => x.GetProperty("name").GetString()!).Where(x => !x.Contains(':') && !x.StartsWith('@')).ToHashSet(StringComparer.Ordinal);
     }
 
@@ -242,7 +243,7 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
 
     private async Task RecoverAsync(List<string> addresses, Func<CancellationToken, Task> drainAcceptedLive, CancellationToken ct)
     {
-        signal.Status = "Recovering";
+        signal.Status = RuntimeStates.Checkpoint.Recovering;
         var markets = await MarketsAsync(ct);
         var end = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var degraded = false;
@@ -258,8 +259,8 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
             var requested = checkpoint?.Time > 0 ? checkpoint.Time : activation;
             var lower = DateTimeOffset.UtcNow.AddHours(-Options.RecoveryHours).ToUnixTimeMilliseconds();
             var start = Math.Max(requested, lower);
-            logger.LogInformation("Hyperliquid recovery stream {Stream}, interval {Start}..{End}", stream, start, end);
-            if (requested < lower) { degraded = true; await store.MarkGapAsync(address, stream, $"Recovery age exceeded: {requested}..{lower}", ct); }
+            logger.LogInformation(HyperliquidWorkerDiagnostics.HyperliquidRecoveryStreamInterval, stream, start, end);
+            if (requested < lower) { degraded = true; await store.MarkGapAsync(address, stream, HyperliquidWorkerDiagnostics.RecoveryAgeExceeded(requested, lower), ct); }
             var complete = false;
             var retentionExhausted = false;
             var recoveredFillIdentities = new HashSet<string>(StringComparer.Ordinal);
@@ -267,13 +268,13 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
             {
                 for (var page = 0; page < Options.MaximumRecoveryPages; page++)
                 {
-                    var kind = stream == "userFills" ? "userFillsByTime" : "userNonFundingLedgerUpdates";
-                    object request = stream == "userFills" ? new { type = kind, user = address, startTime = start, endTime = end, aggregateByTime = false }
+                    var kind = stream == HyperliquidTokens.Streams.Fills ? HyperliquidWireTokens.FillsByTime : HyperliquidTokens.Streams.Ledger;
+                    object request = stream == HyperliquidTokens.Streams.Fills ? new { type = kind, user = address, startTime = start, endTime = end, aggregateByTime = false }
                         : new { type = kind, user = address, startTime = start, endTime = end };
                     using var json = JsonDocument.Parse(await info.QueryAsync(request, 120, ct));
                     var rows = json.RootElement.EnumerateArray().ToArray();
                     foreach (var row in rows) await AcceptRowAsync(address, stream, row, markets, ct);
-                    if (stream == "userFills")
+                    if (stream == HyperliquidTokens.Streams.Fills)
                     {
                         // Includes unsupported markets: they also consume the provider's 10,000-fill retention.
                         foreach (var row in rows) recoveredFillIdentities.Add(HyperliquidProtocol.Canonical(row));
@@ -283,25 +284,25 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
                             break;
                         }
                     }
-                    var limit = stream == "userFills" ? 2000 : 500;
+                    var limit = stream == HyperliquidTokens.Streams.Fills ? 2000 : 500;
                     if (rows.Length < limit) { complete = true; break; }
                     var next = rows.Max(x => x.GetProperty("time").GetInt64());
                     if (next <= start) break; // Inclusive boundary cannot be skipped; explicitly report a gap.
                     start = next;
                 }
                 if (!complete) { degraded = true; await store.MarkGapAsync(address, stream,
-                    retentionExhausted ? $"Provider fill retention exhausted: {requested}..{end}" : $"History page/budget boundary: {start}..{end}", ct); }
+                    retentionExhausted ? HyperliquidWorkerDiagnostics.ProviderFillRetentionExhausted(requested, end) : HyperliquidWorkerDiagnostics.HistoryPageBudgetBoundary(start, end), ct); }
                 else
                 {
                     await drainAcceptedLive(ct);
                     await store.CompleteAsync(address, stream, end, ct);
                 }
-                if (stream != "userFills")
-                { degraded = true; await store.MarkGapAsync(address, stream, $"Ledger retention completeness is not guaranteed: {requested}..{end}", ct); }
+                if (stream != HyperliquidTokens.Streams.Fills)
+                { degraded = true; await store.MarkGapAsync(address, stream, HyperliquidWorkerDiagnostics.LedgerHistoryIncomplete(requested, end), ct); }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
-            { degraded = true; logger.LogWarning(ex, "Hyperliquid recovery incomplete for stream {Stream}", stream); await store.MarkGapAsync(address, stream, $"Recovery failed: {start}..{end}", ct); }
+            { degraded = true; logger.LogWarning(ex, HyperliquidWorkerDiagnostics.HyperliquidRecoveryIncompleteForStream, stream); await store.MarkGapAsync(address, stream, HyperliquidWorkerDiagnostics.RecoveryFailed(start, end), ct); }
         }
-        signal.Status = degraded ? "Degraded — live alerts; history may be incomplete" : "Live";
+        signal.Status = degraded ? HyperliquidWorkerDiagnostics.DegradedLiveAlertsHistoryMayBeIncomplete : RuntimeStates.Checkpoint.Live;
     }
 }

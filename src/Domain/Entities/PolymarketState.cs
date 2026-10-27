@@ -1,3 +1,4 @@
+using Domain.Common;
 namespace Domain.Entities;
 
 /// <summary>Owner-specific opt-in and explicitly confirmed source address.</summary>
@@ -40,7 +41,7 @@ public sealed class PolymarketCheckpoint
     public DateTimeOffset? WindowEnd { get; set; }
     public string? Cursor { get; set; }
     public string? Gap { get; set; }
-    public string Status { get; set; } = "Starting";
+    public string Status { get; set; } = RuntimeStates.Checkpoint.Starting;
     public long? CoveredBlock { get; set; }
     public string? CoveredBlockHash { get; set; }
     public long? ScanNextBlock { get; set; }
@@ -56,7 +57,7 @@ public sealed class PolymarketDelivery
     public Guid WalletId { get; set; }
     public Guid Generation { get; set; }
     public long UserId { get; set; }
-    public string State { get; set; } = "Pending";
+    public string State { get; set; } = RuntimeStates.Delivery.Pending;
     public int Attempts { get; set; }
     public DateTimeOffset DueAt { get; set; }
 }

@@ -31,12 +31,12 @@ public sealed class AddressLabelSeedImporter(
     {
         if (string.IsNullOrWhiteSpace(path))
         {
-            throw new ArgumentException("A seed JSON path is required.", nameof(path));
+            throw new ArgumentException(AddressLabelSeedImporterDiagnostics.SeedPathRequired, nameof(path));
         }
 
         if (!File.Exists(path))
         {
-            throw new FileNotFoundException("Address label seed JSON was not found.", path);
+            throw new FileNotFoundException(AddressLabelSeedImporterDiagnostics.SeedFileMissing, path);
         }
 
         await using var stream = File.OpenRead(path);
@@ -67,7 +67,7 @@ public sealed class AddressLabelSeedImporter(
             if (labelResult.IsFailure)
             {
                 invalid++;
-                messages.Add($"Entry {rowNumber}: {labelResult.Error.Description}");
+                messages.Add(AddressLabelSeedImporterDiagnostics.EntryFailure(rowNumber, labelResult.Error.Description));
                 continue;
             }
 
@@ -102,40 +102,40 @@ public sealed class AddressLabelSeedImporter(
     {
         if (root.ValueKind != JsonValueKind.Object)
         {
-            return InvalidSeed("Address label seed JSON must be an object with schemaVersion, reviewStatus, scopePolicy, and entries.");
+            return InvalidSeed(AddressLabelSeedErrors.InvalidDocument);
         }
 
         var schemaVersion = GetOptionalInt(root, "schemaVersion");
         if (schemaVersion != SupportedSchemaVersion)
         {
-            return InvalidSeed($"Address label seed schemaVersion must be {SupportedSchemaVersion}.");
+            return InvalidSeed(AddressLabelSeedErrors.UnsupportedSchemaVersion(SupportedSchemaVersion));
         }
 
         var reviewStatus = GetOptionalString(root, "reviewStatus");
         if (string.IsNullOrWhiteSpace(reviewStatus))
         {
-            return InvalidSeed("Address label seed reviewStatus is required.");
+            return InvalidSeed(AddressLabelSeedErrors.ReviewStatusRequired);
         }
 
         if (reviewStatus.Equals(CandidateStatus, StringComparison.OrdinalIgnoreCase) && !allowCandidate)
         {
-            return InvalidSeed("Candidate address label seeds require --allow-candidate.");
+            return InvalidSeed(AddressLabelSeedErrors.CandidateNotAllowed);
         }
 
         if (!reviewStatus.Equals(ReviewedStatus, StringComparison.OrdinalIgnoreCase) &&
             !reviewStatus.Equals(CandidateStatus, StringComparison.OrdinalIgnoreCase))
         {
-            return InvalidSeed("Address label seed reviewStatus must be 'reviewed' or 'candidate'.");
+            return InvalidSeed(AddressLabelSeedErrors.InvalidReviewStatus);
         }
 
         if (!TryGetProperty(root, "scopePolicy", out var scopePolicy) || scopePolicy.ValueKind != JsonValueKind.Object)
         {
-            return InvalidSeed("Address label seed scopePolicy object is required.");
+            return InvalidSeed(AddressLabelSeedErrors.ScopePolicyRequired);
         }
 
         if (!TryGetProperty(root, "entries", out var entries) || entries.ValueKind != JsonValueKind.Array)
         {
-            return InvalidSeed("Address label seed entries array is required.");
+            return InvalidSeed(AddressLabelSeedErrors.EntriesRequired);
         }
 
         return Result<JsonElement>.Success(entries);
@@ -162,7 +162,7 @@ public sealed class AddressLabelSeedImporter(
         {
             if (!Enum.TryParse<SupportedChain>(chain, ignoreCase: true, out var supportedChain))
             {
-                return Result<AddressLabel>.Failure(Error.Validation("AddressLabel.Chain", $"Unsupported chain '{chain}'."));
+                return Result<AddressLabel>.Failure(AddressLabelSeedErrors.UnsupportedChain(chain));
             }
 
             parsedChain = supportedChain;
@@ -170,7 +170,7 @@ public sealed class AddressLabelSeedImporter(
 
         if (!Enum.TryParse<AddressLabelKind>(kindText.Value, ignoreCase: true, out var kind))
         {
-            return Result<AddressLabel>.Failure(Error.Validation("AddressLabel.Kind", $"Unsupported address label kind '{kindText.Value}'."));
+            return Result<AddressLabel>.Failure(AddressLabelSeedErrors.UnsupportedKind(kindText.Value));
         }
 
         var scopeResult = ValidateScope(kind, parsedChain);
@@ -182,7 +182,7 @@ public sealed class AddressLabelSeedImporter(
         var sourceReference = GetOptionalString(row, "sourceReference");
         if (string.IsNullOrWhiteSpace(sourceReference))
         {
-            return Result<AddressLabel>.Failure(Error.Validation("AddressLabel.SourceReference", "Imported seed entries must include sourceReference."));
+            return Result<AddressLabel>.Failure(AddressLabelSeedErrors.SourceReferenceRequired);
         }
 
         var priority = GetOptionalInt(row, "priority") ?? 100;
@@ -204,13 +204,13 @@ public sealed class AddressLabelSeedImporter(
         if (kind is AddressLabelKind.Exchange or AddressLabelKind.ExchangeHotWallet or AddressLabelKind.ExchangeColdWallet &&
             chain is not null)
         {
-            return Result.Failure(Error.Validation("AddressLabel.Chain", "Exchange seed entries must be global and omit chain."));
+            return Result.Failure(AddressLabelSeedErrors.ExchangeMustBeGlobal);
         }
 
         if (kind is AddressLabelKind.Bridge or AddressLabelKind.DexRouter or AddressLabelKind.Protocol or AddressLabelKind.Treasury &&
             chain is null)
         {
-            return Result.Failure(Error.Validation("AddressLabel.Chain", $"{kind} seed entries must include chain."));
+            return Result.Failure(AddressLabelSeedErrors.ChainRequired(kind));
         }
 
         return Result.Success();
@@ -220,7 +220,7 @@ public sealed class AddressLabelSeedImporter(
     {
         var value = GetOptionalString(row, propertyName);
         return string.IsNullOrWhiteSpace(value)
-            ? Result<string>.Failure(Error.Validation("AddressLabelSeed.Required", $"Missing required JSON property '{propertyName}'."))
+            ? Result<string>.Failure(AddressLabelSeedErrors.PropertyRequired(propertyName))
             : Result<string>.Success(value);
     }
 
@@ -255,6 +255,6 @@ public sealed class AddressLabelSeedImporter(
         return row.TryGetProperty(pascalCaseName, out property);
     }
 
-    private static Result<JsonElement> InvalidSeed(string description)
-        => Result<JsonElement>.Failure(Error.Validation("AddressLabelSeed.Schema", description));
+    private static Result<JsonElement> InvalidSeed(Error error)
+        => Result<JsonElement>.Failure(error);
 }

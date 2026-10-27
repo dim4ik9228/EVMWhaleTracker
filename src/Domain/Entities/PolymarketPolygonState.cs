@@ -1,3 +1,4 @@
+using Domain.Common;
 namespace Domain.Entities;
 
 /// <summary>Full Polygon source identity and immutable wire payload, separate from normalized activities.</summary>
@@ -15,7 +16,7 @@ public sealed class PolymarketRawLog
     public string Data { get; set; } = "";
     public bool Removed { get; set; }
     public DateTimeOffset StoredAt { get; set; }
-    public string DecodeState { get; set; } = "Pending";
+    public string DecodeState { get; set; } = RuntimeStates.Normalization.Pending;
 }
 
 /// <summary>Retained ancestry allows checkpoint validation and bounded common-ancestor rewinds.</summary>

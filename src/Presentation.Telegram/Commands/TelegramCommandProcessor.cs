@@ -47,22 +47,22 @@ public sealed class TelegramCommandProcessor(
 
         if (!request.IsPrivateChat)
         {
-            return new TelegramCommandResponse("Please open this bot in a private chat to manage tracked wallets.");
+            return new TelegramCommandResponse(TelegramCommandProcessorText.PrivateChatRequired);
         }
 
         return command.Name switch
         {
-            "start" => await startPayloadProcessor.ProcessAsync(
+            TelegramInteractionTokens.Commands.Start => await startPayloadProcessor.ProcessAsync(
                 request.TelegramUserId,
                 command.Arguments,
                 cancellationToken),
-            "help" => new TelegramCommandResponse(TelegramCommandHelp.Text),
-            "add" => await walletCommandProcessor.HandleAddAsync(
+            TelegramInteractionTokens.Commands.Help => new TelegramCommandResponse(TelegramCommandHelp.Text),
+            TelegramInteractionTokens.Commands.Add => await walletCommandProcessor.HandleAddAsync(
                 request.TelegramUserId,
                 command.Arguments,
                 cancellationToken),
-            "list" => await walletCommandProcessor.HandleListAsync(request.TelegramUserId, cancellationToken),
-            "remove" => await walletCommandProcessor.HandleRemoveAsync(
+            TelegramInteractionTokens.Commands.List => await walletCommandProcessor.HandleListAsync(request.TelegramUserId, cancellationToken),
+            TelegramInteractionTokens.Commands.Remove => await walletCommandProcessor.HandleRemoveAsync(
                 request.TelegramUserId,
                 command.Arguments,
                 cancellationToken),

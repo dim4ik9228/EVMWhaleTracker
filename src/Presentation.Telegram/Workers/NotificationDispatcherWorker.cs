@@ -55,7 +55,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
         {
             if (payload.TelegramUserId <= 0)
             {
-                _logger.LogWarning("Skipping notification with invalid Telegram user id.");
+                _logger.LogWarning(NotificationDispatcherWorkerText.InvalidRecipient);
                 continue;
             }
 
@@ -73,7 +73,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
                 if (sent)
                 {
                     _logger.LogInformation(
-                        "Sent Telegram notification to chat {ChatId} for wallet {TrackedWalletAddress} and transaction {TransactionHash}.",
+                        NotificationDispatcherWorkerText.NotificationSent,
                         payload.TelegramUserId,
                         payload.TrackedWalletAddress,
                         payload.TransactionHash);
@@ -85,7 +85,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unexpected failure while sending notification for chat {ChatId}.", payload.TelegramUserId);
+                _logger.LogError(ex, NotificationDispatcherWorkerText.NotificationSendFailed, payload.TelegramUserId);
             }
             finally
             {

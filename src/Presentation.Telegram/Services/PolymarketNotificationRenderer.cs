@@ -13,24 +13,24 @@ public sealed partial class PolymarketNotificationRenderer
         var a = notification.Activity;
         string E(string? value) => WebUtility.HtmlEncode(Clean(value));
         string N(decimal value) => value.ToString("0.########", CultureInfo.InvariantCulture);
-        var account = Address().IsMatch(a.SourceAddress) ? $"<a href=\"https://polymarket.com/profile/{a.SourceAddress}\">Polymarket</a>" : "Polymarket";
-        var header = $"<b>{E(notification.Alias)}</b> | {account}";
+        var account = Address().IsMatch(a.SourceAddress) ? PolymarketNotificationRendererText.ProfileLink(a.SourceAddress) : PolymarketNotificationRendererText.Polymarket;
+        var header = PolymarketNotificationRendererText.Header(E(notification.Alias), account);
         if (!string.IsNullOrWhiteSpace(botUsername) && BotName().IsMatch(botUsername.TrimStart('@')))
-            header += $" | <a href=\"https://t.me/{Uri.EscapeDataString(botUsername.TrimStart('@'))}?start=edit_wallet_{notification.WalletId:N}\">✏️</a>";
-        var action = a.Action switch { "BUY" => "🟢 Bought", "SELL" => "🔴 Sold", "REDEEM" => "🏁 Redeemed", "CORRECTION" => "⚠️ Settlement correction", _ => "Activity" };
+            header += PolymarketNotificationRendererText.EditWalletLink(Uri.EscapeDataString(botUsername.TrimStart('@')), notification.WalletId);
+        var action = a.Action switch { PolymarketTokens.Actions.Buy => PolymarketNotificationRendererText.Bought, PolymarketTokens.Actions.Sell => PolymarketNotificationRendererText.Sold, PolymarketTokens.Actions.Redeem => PolymarketNotificationRendererText.Redeemed, PolymarketTokens.Actions.Correction => PolymarketNotificationRendererText.SettlementCorrection, _ => PolymarketNotificationRendererText.Activity };
         var details = action + " " + E(a.Outcome ?? a.MarketId);
-        if (a.Shares is { } shares) details += $" · {N(shares)} shares";
-        var value = a.CashValue is { } cash ? $"{N(cash)} {E(a.QuoteCurrency)}" : "Value unavailable";
-        if (a.Price is { } price && a.Action != "REDEEM") value = $"{N(price)} {E(a.QuoteCurrency)}/share · {value}";
-        if (a.Action is "BUY" or "SELL") value += " gross";
-        if (a.CollateralFee is > 0) value += $" · {N(a.CollateralFee.Value)} {E(a.QuoteCurrency)} fee";
-        if (a.Action == "REDEEM") value += " payout";
+        if (a.Shares is { } shares) details += PolymarketNotificationRendererText.Shares(N(shares));
+        var value = a.CashValue is { } cash ? $"{N(cash)} {E(a.QuoteCurrency)}" : PolymarketNotificationRendererText.ValueUnavailable;
+        if (a.Price is { } price && a.Action != PolymarketTokens.Actions.Redeem) value = PolymarketNotificationRendererText.UnitPrice(N(price), E(a.QuoteCurrency), value);
+        if (a.Action is PolymarketTokens.Actions.Buy or PolymarketTokens.Actions.Sell) value += PolymarketNotificationRendererText.GrossSuffix;
+        if (a.CollateralFee is > 0) value += PolymarketNotificationRendererText.Fee(N(a.CollateralFee.Value), E(a.QuoteCurrency));
+        if (a.Action == PolymarketTokens.Actions.Redeem) value += PolymarketNotificationRendererText.PayoutSuffix;
         var market = a.MarketSlug is { } slug && Slug().IsMatch(slug)
-            ? $"\n<a href=\"https://polymarket.com/market/{Uri.EscapeDataString(slug)}\">Market</a>" : "";
+            ? PolymarketNotificationRendererText.MarketLink(Uri.EscapeDataString(slug)) : "";
         var transaction = a.TransactionHash is { } hash && Hash().IsMatch(hash)
-            ? $"\\n<a href=\"https://polygonscan.com/tx/{hash}\">Transaction</a>" : "";
-        if (a.Action == "CORRECTION") return $"{header}\n{action}\n{E(a.Title)}{transaction.Replace("\\n", "\n")}";
-        return $"{header}\n{details}\n{E(a.Title ?? ("Position " + a.MarketId))}\n{value}{market}{transaction.Replace("\\n", "\n")}\n{a.Time:yyyy-MM-dd HH:mm:ss} UTC";
+            ? PolymarketNotificationRendererText.TransactionLink(hash) : "";
+        if (a.Action == PolymarketTokens.Actions.Correction) return PolymarketNotificationRendererText.CorrectionMessage(header, action, E(a.Title), transaction.Replace("\\n", "\n"));
+        return PolymarketNotificationRendererText.SettlementMessage(header, details, E(a.Title ?? (PolymarketNotificationRendererText.PositionPrefix + a.MarketId)), value, market, transaction.Replace("\\n", "\n"), a.Time);
     }
     private static string Clean(string? value) => new((value ?? "").Where(c => !char.IsControl(c) && char.GetUnicodeCategory(c) != UnicodeCategory.Format).Take(300).ToArray());
     [GeneratedRegex("^0x[0-9a-fA-F]{64}$", RegexOptions.CultureInvariant)] private static partial Regex Hash();

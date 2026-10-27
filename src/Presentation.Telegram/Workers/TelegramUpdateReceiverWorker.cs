@@ -31,7 +31,7 @@ public sealed class TelegramUpdateReceiverWorker : BackgroundService
 
         if (string.IsNullOrWhiteSpace(options.Value.BotToken))
         {
-            throw new InvalidOperationException("TelegramBot:BotToken must be configured.");
+            throw new InvalidOperationException(TelegramUpdateReceiverWorkerText.BotTokenRequired);
         }
 
         _telegramBotClient = telegramBotClient;
@@ -47,7 +47,7 @@ public sealed class TelegramUpdateReceiverWorker : BackgroundService
         };
 
         _telegramBotClient.StartReceiving(_updateHandler, receiverOptions, stoppingToken);
-        _logger.LogInformation("Telegram update receiver started.");
+        _logger.LogInformation(TelegramUpdateReceiverWorkerText.TelegramUpdateReceiverStarted);
 
         try
         {

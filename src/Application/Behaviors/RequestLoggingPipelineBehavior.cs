@@ -24,19 +24,19 @@ public sealed class RequestLoggingPipelineBehavior<TRequest, TResponse>(
 
         var requestName = typeof(TRequest).Name;
 
-        logger.LogInformation("Processing request {requestName}", requestName);
+        logger.LogInformation(RequestLoggingPipelineBehaviorDiagnostics.ProcessingRequest, requestName);
 
         var result = await next();
 
         if (result.IsSuccess)
         {
-            logger.LogInformation("Completed request {RequestName}", requestName);
+            logger.LogInformation(RequestLoggingPipelineBehaviorDiagnostics.CompletedRequest, requestName);
         }
         else
         {
-            using (LogContext.PushProperty("Error", result.Error, true))
+            using (LogContext.PushProperty(RequestLoggingPipelineBehaviorDiagnostics.ErrorProperty, result.Error, true))
             {
-                logger.LogError("Completed request {RequestName} with error", requestName);
+                logger.LogError(RequestLoggingPipelineBehaviorDiagnostics.CompletedRequestWithError, requestName);
             }
         }
 

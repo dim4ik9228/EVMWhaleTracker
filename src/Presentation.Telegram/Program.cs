@@ -44,59 +44,59 @@ builder.Services.AddSerilog((services, loggerConfiguration) =>
 });
 
 builder.Services.Configure<BlockchainIndexerOptions>(
-    builder.Configuration.GetSection("BlockchainIndexer"));
+    builder.Configuration.GetSection(HostConfiguration.BlockchainIndexer));
 
 builder.Services.Configure<BlockchainNetworksOptions>(
-    builder.Configuration.GetSection("BlockchainNetworks"));
+    builder.Configuration.GetSection(HostConfiguration.BlockchainNetworks));
 
 builder.Services.Configure<AssetPriceOptions>(
-    builder.Configuration.GetSection("AssetPrices"));
+    builder.Configuration.GetSection(HostConfiguration.AssetPrices));
 
 builder.Services.Configure<TelegramBotOptions>(
-    builder.Configuration.GetSection("TelegramBot"));
+    builder.Configuration.GetSection(HostConfiguration.TelegramBot));
 
 builder.Services.Configure<EnsReverseLookupOptions>(
-    builder.Configuration.GetSection("EnsReverseLookup"));
+    builder.Configuration.GetSection(HostConfiguration.EnsReverseLookup));
 
-var connectionString = builder.Configuration["ConnectionStrings:Default"];
+var connectionString = builder.Configuration[HostConfiguration.ConnectionString];
 if (string.IsNullOrWhiteSpace(connectionString))
 {
-    throw new InvalidOperationException("ConnectionStrings:Default must be configured.");
+    throw new InvalidOperationException(HostDiagnostics.ConnectionStringRequired);
 }
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddScoped<ITrackedWalletRepository, TrackedWalletRepository>();
-builder.Services.AddOptions<PolymarketOptions>().Bind(builder.Configuration.GetSection("Polymarket"))
-    .Validate(o => o.IsValidForStartup(), "Polymarket options exceed supported bounds").ValidateOnStart();
-builder.Services.AddHttpClient("Polymarket", client => client.Timeout = Timeout.InfiniteTimeSpan)
+builder.Services.AddOptions<PolymarketOptions>().Bind(builder.Configuration.GetSection(HostConfiguration.Polymarket))
+    .Validate(o => o.IsValidForStartup(), HostDiagnostics.InvalidPolymarketOptions).ValidateOnStart();
+builder.Services.AddHttpClient(HostConfiguration.Polymarket, client => client.Timeout = Timeout.InfiniteTimeSpan)
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddSingleton<IPolymarketProfileResolver>(sp => new PolymarketProfileResolver(
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient("Polymarket"), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PolymarketOptions>>()));
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient(HostConfiguration.Polymarket), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PolymarketOptions>>()));
 builder.Services.AddScoped<IPolymarketSettings, PolymarketSettings>();
-builder.Services.AddOptions<PolymarketPolygonOptions>().Bind(builder.Configuration.GetSection("PolymarketPolygon"))
-    .PostConfigure(o => { if (string.IsNullOrWhiteSpace(o.RpcApiKey)) o.RpcApiKey = builder.Configuration["BlockchainNetworks:RpcApiKey"]; })
-    .Validate(o => o.IsValid(), "Polymarket Polygon options exceed supported bounds").ValidateOnStart();
-builder.Services.AddHttpClient("PolymarketPolygon", client => client.Timeout = Timeout.InfiniteTimeSpan)
+builder.Services.AddOptions<PolymarketPolygonOptions>().Bind(builder.Configuration.GetSection(HostConfiguration.PolymarketPolygon))
+    .PostConfigure(o => { if (string.IsNullOrWhiteSpace(o.RpcApiKey)) o.RpcApiKey = builder.Configuration[HostConfiguration.RpcApiKey]; })
+    .Validate(o => o.IsValid(), HostDiagnostics.InvalidPolygonOptions).ValidateOnStart();
+builder.Services.AddHttpClient(HostConfiguration.PolymarketPolygon, client => client.Timeout = Timeout.InfiniteTimeSpan)
     // Infura credentials are part of the URL path; factory request logs must never include it.
     .RemoveAllLoggers()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddSingleton<IPolymarketPolygonRpc>(sp => new PolymarketPolygonRpc(
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient("PolymarketPolygon"), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PolymarketPolygonOptions>>()));
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient(HostConfiguration.PolymarketPolygon), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PolymarketPolygonOptions>>()));
 builder.Services.AddSingleton<IPolymarketMarketResolver>(sp => new PolymarketMarketResolver(
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient("Polymarket"), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PolymarketPolygonOptions>>()));
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient(HostConfiguration.Polymarket), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<PolymarketPolygonOptions>>()));
 builder.Services.AddSingleton<PolymarketPolygonHealth>();
 builder.Services.AddScoped<PolymarketPolygonStore>();
 builder.Services.AddHostedService<PolymarketPolygonWorker>();
 builder.Services.AddScoped<IAddressLabelRepository, AddressLabelRepository>();
-builder.Services.AddOptions<HyperliquidOptions>().Bind(builder.Configuration.GetSection("Hyperliquid"))
-    .Validate(o => o.IsValidForStartup(), "Hyperliquid options exceed supported bounds").ValidateOnStart();
+builder.Services.AddOptions<HyperliquidOptions>().Bind(builder.Configuration.GetSection(HostConfiguration.Hyperliquid))
+    .Validate(o => o.IsValidForStartup(), HostDiagnostics.InvalidHyperliquidOptions).ValidateOnStart();
 builder.Services.AddSingleton<HyperliquidChangeSignal>();
 builder.Services.AddScoped<IHyperliquidSettings, HyperliquidSettings>();
 builder.Services.AddScoped<HyperliquidStore>();
 builder.Services.AddSingleton<IHyperliquidSocketFactory, HyperliquidSocketFactory>();
-builder.Services.AddHttpClient("Hyperliquid", client => client.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient(HostConfiguration.Hyperliquid, client => client.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddSingleton<IHyperliquidInfoClient>(sp => new HyperliquidInfoClient(
-    sp.GetRequiredService<IHttpClientFactory>().CreateClient("Hyperliquid"), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<HyperliquidOptions>>()));
+    sp.GetRequiredService<IHttpClientFactory>().CreateClient(HostConfiguration.Hyperliquid), sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<HyperliquidOptions>>()));
 builder.Services.AddHostedService<HyperliquidWorker>();
 builder.Services.AddScoped<AddressLabelSeedImporter>();
 builder.Services.AddMediatR(cfg =>
@@ -153,16 +153,16 @@ if (enabledBlockchainNetworks.Count > 0)
     builder.Services.AddHostedService<WalletTrackerWorker>();
     builder.Services.AddHostedService<NotificationAggregationWorker>();
 
-    Console.WriteLine($"Enabled blockchain networks: {string.Join(", ", enabledBlockchainNetworks.Select(network => network.Chain))}");
+    Console.WriteLine(HostDiagnostics.EnabledNetworks(string.Join(", ", enabledBlockchainNetworks.Select(network => network.Chain))));
 }
 else
 {
-    Console.WriteLine("No blockchain networks are configured. Blockchain workers are disabled.");
+    Console.WriteLine(HostDiagnostics.NoNetworks);
 }
 
 // Configure Telegram Bot
-var telegramSection = builder.Configuration.GetSection("TelegramBot");
-var botToken = telegramSection["BotToken"];
+var telegramSection = builder.Configuration.GetSection(HostConfiguration.TelegramBot);
+var botToken = telegramSection[HostConfiguration.BotToken];
 if (!string.IsNullOrWhiteSpace(botToken))
 {
     builder.Services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(botToken));
@@ -179,7 +179,7 @@ if (!string.IsNullOrWhiteSpace(botToken))
 }
 else
 {
-    Console.WriteLine("TelegramBot:BotToken is not configured. Telegram workers are disabled.");
+    Console.WriteLine(HostDiagnostics.TelegramDisabled);
 }
 
 var app = builder.Build();
@@ -191,7 +191,7 @@ using (var scope = app.Services.CreateScope())
     await dbContext.Database.MigrateAsync();
 }
 
-if (args.Length > 0 && string.Equals(args[0], "import-address-labels", StringComparison.OrdinalIgnoreCase))
+if (args.Length > 0 && string.Equals(args[0], HostConfiguration.ImportAddressLabels, StringComparison.OrdinalIgnoreCase))
 {
     await app.Services.RunAddressLabelImportAsync(args);
     return;

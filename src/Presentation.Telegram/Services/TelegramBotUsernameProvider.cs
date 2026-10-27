@@ -28,7 +28,7 @@ public sealed class TelegramBotUsernameProvider(
             _botUsername = botUser.Username;
             if (string.IsNullOrWhiteSpace(_botUsername))
             {
-                logger.LogWarning("Telegram getMe did not return a bot username; edit deep links will be omitted.");
+                logger.LogWarning(TelegramBotUsernameProviderText.UsernameMissing);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -37,7 +37,7 @@ public sealed class TelegramBotUsernameProvider(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Could not resolve Telegram bot username via getMe; edit deep links will be omitted.");
+            logger.LogWarning(ex, TelegramBotUsernameProviderText.UsernameLookupFailed);
         }
         finally
         {

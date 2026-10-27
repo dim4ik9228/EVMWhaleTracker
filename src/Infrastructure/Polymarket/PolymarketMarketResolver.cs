@@ -23,14 +23,14 @@ public sealed class PolymarketMarketResolver(HttpClient http, IOptions<Polymarke
             PolymarketMarket? value = null;
             try
             {
-                var version = family == "position-v2" ? "v2" : "v1";
+                var version = family == PolymarketWireTokens.PositionV2 ? PolymarketWireTokens.MarketsV2 : PolymarketWireTokens.MarketsV1;
                 using var response = await http.GetAsync(options.Value.MarketsUrl + "?clob_token_ids=" + Uri.EscapeDataString(tokenId) + "&version=" + version,
                     HttpCompletionOption.ResponseHeadersRead, timeout.Token);
                 response.EnsureSuccessStatusCode();
                 await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
                 using var buffer = new MemoryStream(); var bytes = new byte[8192]; int n;
                 while ((n = await stream.ReadAsync(bytes, timeout.Token)) != 0)
-                { if (buffer.Length + n > options.Value.MaximumResponseBytes) throw new InvalidDataException("Gamma response too large."); buffer.Write(bytes, 0, n); }
+                { if (buffer.Length + n > options.Value.MaximumResponseBytes) throw new InvalidDataException(PolymarketMarketResolverDiagnostics.GammaResponseTooLarge); buffer.Write(bytes, 0, n); }
                 using var document = JsonDocument.Parse(buffer.ToArray());
                 if (document.RootElement.ValueKind == JsonValueKind.Array)
                     foreach (var market in document.RootElement.EnumerateArray())

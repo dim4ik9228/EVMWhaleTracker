@@ -1,3 +1,4 @@
+using Domain.Common;
 namespace Infrastructure.Polymarket;
 
 /// <summary>Independent default-off acquisition switch and finite Polygon resource budgets.</summary>
@@ -8,8 +9,8 @@ public sealed class PolymarketPolygonOptions
     public string WebSocketRpcUrl { get; set; } = "wss://polygon-mainnet.infura.io/ws/v3/";
     public string? RpcApiKey { get; set; }
     public string RegistryVersion { get; set; } = PolymarketContractRegistry.Version;
-    public string[] Families { get; set; } = ["ctf-current", "ctf-negative-current", "position-v2", "ctf-legacy", "ctf-negative-legacy"];
-    public string FinalityMode { get; set; } = "Finalized";
+    public string[] Families { get; set; } = [PolymarketWireTokens.CurrentCtf, PolymarketWireTokens.CurrentNegativeCtf, PolymarketWireTokens.PositionV2, PolymarketWireTokens.LegacyCtf, PolymarketWireTokens.LegacyNegativeCtf];
+    public string FinalityMode { get; set; } = PolymarketWireTokens.FinalizedMode;
     public int ConfirmationDepth { get; set; } = 128;
     public int MaxUniqueAddresses { get; set; } = 20;
     public int MaxSubscriptions { get; set; } = 6;
@@ -31,7 +32,7 @@ public sealed class PolymarketPolygonOptions
     private string Endpoint(string value) => string.IsNullOrWhiteSpace(RpcApiKey) ? value : value.TrimEnd('/') + "/" + Uri.EscapeDataString(RpcApiKey);
     public bool IsValid() => !Enabled || RegistryVersion == PolymarketContractRegistry.Version
         && Families.Length > 0 && Families.All(f => PolymarketContractRegistry.Exchanges.Any(e => e.Family == f))
-        && FinalityMode is "Finalized" or "Confirmations"
+        && FinalityMode is PolymarketWireTokens.FinalizedMode or PolymarketWireTokens.ConfirmationsMode
         && ConfirmationDepth is >= 16 and <= 1024 && RetainedAncestry >= ConfirmationDepth * 2 && RetainedAncestry <= 4096
         && MaxUniqueAddresses is >= 1 and <= 100 && MaxSubscriptions is >= 6 and <= 20
         && QueueCapacity is >= 16 and <= 4096 && MaximumFrameBytes is >= 4096 and <= 8388608
@@ -49,7 +50,7 @@ public sealed class PolymarketPolygonOptions
 /// <summary>Process-local observable health; durable account gaps are kept separately in checkpoints.</summary>
 public sealed class PolymarketPolygonHealth
 {
-    public string Status { get; set; } = "Starting";
+    public string Status { get; set; } = RuntimeStates.Checkpoint.Starting;
     public long Head { get; set; }
     public int DesiredSubscriptions { get; set; }
     public int AcknowledgedSubscriptions { get; set; }

@@ -1,3 +1,4 @@
+using Domain.Common;
 using System.Text.Json;
 using Application.Hyperliquid;
 using Domain.Entities;
@@ -78,7 +79,7 @@ public sealed class HyperliquidStore(AppDbContext db, HyperliquidChangeSignal? s
     public async Task PruneAsync(int retentionDays, CancellationToken ct)
     {
         var cutoff = DateTimeOffset.UtcNow.AddDays(-retentionDays);
-        await db.Set<HyperliquidDelivery>().Where(x => x.State != "Pending" && x.DueAt < cutoff).ExecuteDeleteAsync(ct);
+        await db.Set<HyperliquidDelivery>().Where(x => x.State != RuntimeStates.Delivery.Pending && x.DueAt < cutoff).ExecuteDeleteAsync(ct);
         await db.Set<HyperliquidEvent>().Where(x => x.StoredAt < cutoff && !db.Set<HyperliquidDelivery>().Any(d => d.EventId == x.Id)).ExecuteDeleteAsync(ct);
     }
 }

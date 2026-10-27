@@ -1,3 +1,4 @@
+using Presentation.Telegram.Commands;
 using Domain.Common;
 
 namespace Presentation.Telegram.Commands.Callbacks;
@@ -20,11 +21,11 @@ public static class TelegramCallbackDataParser
         }
 
         var parts = data.Split(':');
-        if (parts.Length == 4 && parts[0] == "pm" && parts[1].Length == 1 && Guid.TryParseExact(parts[2], "N", out var pmWallet) && parts[3].Length == 22)
+        if (parts.Length == 4 && parts[0] == TelegramInteractionTokens.Callbacks.Polymarket && parts[1].Length == 1 && Guid.TryParseExact(parts[2], "N", out var pmWallet) && parts[3].Length == 22)
         {
-            var action = parts[1] switch { "t" => TelegramCallbackAction.PolymarketToggle, "b" => TelegramCallbackAction.PolymarketBind,
-                "m" => TelegramCallbackAction.PolymarketMinimum, "a" => TelegramCallbackAction.PolymarketAlias,
-                "s" => TelegramCallbackAction.PolymarketSource, _ => (TelegramCallbackAction?)null };
+            var action = parts[1] switch { TelegramInteractionTokens.Callbacks.Toggle => TelegramCallbackAction.PolymarketToggle, TelegramInteractionTokens.Callbacks.Bind => TelegramCallbackAction.PolymarketBind,
+                TelegramInteractionTokens.Callbacks.Minimum => TelegramCallbackAction.PolymarketMinimum, TelegramInteractionTokens.Callbacks.Alias => TelegramCallbackAction.PolymarketAlias,
+                TelegramInteractionTokens.Callbacks.Source => TelegramCallbackAction.PolymarketSource, _ => (TelegramCallbackAction?)null };
             if (action is null) return false;
             try
             {
@@ -35,7 +36,7 @@ public static class TelegramCallbackDataParser
             }
             catch (FormatException) { return false; }
         }
-        if (parts.Length == 4 && parts[0] == "hc" && Guid.TryParseExact(parts[1], "N", out var coreWallet)
+        if (parts.Length == 4 && parts[0] == TelegramInteractionTokens.Callbacks.HyperliquidToggle && Guid.TryParseExact(parts[1], "N", out var coreWallet)
             && TryParseToggle(parts[2], out var coreToggle) && parts[3].Length == 22)
         {
             try
@@ -49,8 +50,8 @@ public static class TelegramCallbackDataParser
             catch (FormatException) { return false; }
         }
         if (parts.Length < 4
-            || !string.Equals(parts[0], "tw", StringComparison.Ordinal)
-            || !string.Equals(parts[1], "v1", StringComparison.Ordinal))
+            || !string.Equals(parts[0], TelegramInteractionTokens.Callbacks.Wallet, StringComparison.Ordinal)
+            || !string.Equals(parts[1], TelegramInteractionTokens.Callbacks.Version, StringComparison.Ordinal))
         {
             return false;
         }
@@ -63,37 +64,37 @@ public static class TelegramCallbackDataParser
 
         switch (actionToken)
         {
-            case "p" when parts.Length == 4:
+            case TelegramInteractionTokens.Callbacks.Predictions when parts.Length == 4:
                 callbackData = new TelegramCallbackData(TelegramCallbackAction.Polymarket, walletId);
                 return true;
-            case "h" when parts.Length == 4:
+            case TelegramInteractionTokens.Callbacks.Hyperliquid when parts.Length == 4:
                 callbackData = new TelegramCallbackData(TelegramCallbackAction.Hyperliquid, walletId);
                 return true;
-            case "o" when parts.Length == 4:
+            case TelegramInteractionTokens.Callbacks.Overview when parts.Length == 4:
                 callbackData = new TelegramCallbackData(TelegramCallbackAction.Overview, walletId);
                 return true;
-            case "n" when parts.Length == 4:
+            case TelegramInteractionTokens.Callbacks.Networks when parts.Length == 4:
                 callbackData = new TelegramCallbackData(TelegramCallbackAction.Networks, walletId);
                 return true;
-            case "r" when parts.Length == 4:
+            case TelegramInteractionTokens.Callbacks.Rename when parts.Length == 4:
                 callbackData = new TelegramCallbackData(TelegramCallbackAction.Rename, walletId);
                 return true;
-            case "m" when parts.Length == 4:
+            case TelegramInteractionTokens.Callbacks.Minimum when parts.Length == 4:
                 callbackData = new TelegramCallbackData(TelegramCallbackAction.MinimumUsd, walletId);
                 return true;
-            case "d" when parts.Length == 4:
+            case TelegramInteractionTokens.Callbacks.Delete when parts.Length == 4:
                 callbackData = new TelegramCallbackData(TelegramCallbackAction.DeletePrompt, walletId);
                 return true;
-            case "dc" when parts.Length == 4:
+            case TelegramInteractionTokens.Callbacks.DeleteConfirm when parts.Length == 4:
                 callbackData = new TelegramCallbackData(TelegramCallbackAction.DeleteConfirm, walletId);
                 return true;
-            case "b" when parts.Length == 4:
+            case TelegramInteractionTokens.Callbacks.Close when parts.Length == 4:
                 callbackData = new TelegramCallbackData(TelegramCallbackAction.Close, walletId);
                 return true;
-            case "na" when parts.Length == 4:
+            case TelegramInteractionTokens.Callbacks.DeselectNetworks when parts.Length == 4:
                 callbackData = new TelegramCallbackData(TelegramCallbackAction.DeselectAllNetworks, walletId);
                 return true;
-            case "nt" when parts.Length == 6
+            case TelegramInteractionTokens.Callbacks.NetworkToggle when parts.Length == 6
                 && int.TryParse(parts[4], out var chainId)
                 && Enum.IsDefined(typeof(SupportedChain), chainId)
                 && chainId != (int)SupportedChain.Arc
@@ -112,13 +113,13 @@ public static class TelegramCallbackDataParser
     private static bool TryParseToggle(string value, out bool enabled)
     {
         enabled = false;
-        if (value == "1")
+        if (value == TelegramInteractionTokens.Callbacks.Enabled)
         {
             enabled = true;
             return true;
         }
 
-        return value == "0";
+        return value == TelegramInteractionTokens.Callbacks.Disabled;
     }
 }
 

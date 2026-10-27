@@ -1,3 +1,4 @@
+using Presentation.Telegram.Commands;
 using Application.Abstractions;
 using Application.Hyperliquid;
 using Application.Polymarket;
@@ -35,19 +36,19 @@ public sealed class TelegramCallbackProcessor(
 
         if (!request.IsPrivateChat)
         {
-            return Alert("Please open this bot in a private chat to manage tracked wallets.");
+            return Alert(TelegramCallbackProcessorText.PrivateChatRequired);
         }
 
         if (!TelegramCallbackDataParser.TryParse(request.Data, out var callbackData))
         {
-            return Alert("This menu is no longer available.");
+            return Alert(TelegramUiText.MenuUnavailable);
         }
 
         if (callbackData.Action == TelegramCallbackAction.Close)
         {
             return new TelegramCallbackResponse(
                 TelegramCallbackMessageAction.DeleteMessage,
-                AnswerText: "Closed.");
+                AnswerText: TelegramUiText.Closed);
         }
 
         var walletResult = await sender.Send(
@@ -56,7 +57,7 @@ public sealed class TelegramCallbackProcessor(
 
         if (walletResult.IsFailure)
         {
-            return Alert("Wallet not found.");
+            return Alert(TelegramCallbackProcessorText.WalletNotFound);
         }
 
         return callbackData.Action switch
@@ -65,54 +66,54 @@ public sealed class TelegramCallbackProcessor(
                 or TelegramCallbackAction.PolymarketMinimum or TelegramCallbackAction.PolymarketAlias or TelegramCallbackAction.PolymarketSource
                 => await HandlePolymarketAsync(request.TelegramUserId, walletResult.Value, callbackData, cancellationToken),
             TelegramCallbackAction.Hyperliquid or TelegramCallbackAction.HyperliquidToggle => await HandleHyperliquidAsync(request.TelegramUserId, callbackData, cancellationToken),
-            TelegramCallbackAction.Overview => Edit(RenderOverview(walletResult.Value), "Done."),
+            TelegramCallbackAction.Overview => Edit(RenderOverview(walletResult.Value), TelegramUiText.Done),
             TelegramCallbackAction.Networks => Edit(RenderNetworks(walletResult.Value)),
             TelegramCallbackAction.NetworkToggle => await HandleNetworkToggleAsync(
                 request.TelegramUserId,
                 walletResult.Value,
                 callbackData,
                 cancellationToken),
-            TelegramCallbackAction.DeselectAllNetworks => Alert("At least one network must remain enabled."),
+            TelegramCallbackAction.DeselectAllNetworks => Alert(TelegramCallbackProcessorText.LastNetworkRequired),
             TelegramCallbackAction.Rename => HandlePrompt(
                 request.TelegramUserId,
                 PendingTelegramAction.RenameTrackedWallet(walletResult.Value.Id),
-                "Send a new name for this wallet."),
+                TelegramUiText.RenamePrompt),
             TelegramCallbackAction.MinimumUsd => HandlePrompt(
                 request.TelegramUserId,
                 PendingTelegramAction.UpdateMinimumUsdValue(walletResult.Value.Id),
-                "Send the minimum transaction USD value.\nUse 0 to notify on every matched transaction."),
+                TelegramCallbackProcessorText.MinimumUsdPrompt),
             TelegramCallbackAction.DeletePrompt => Edit(RenderDeleteConfirmation(walletResult.Value)),
             TelegramCallbackAction.DeleteConfirm => await HandleDeleteConfirmAsync(
                 request.TelegramUserId,
                 walletResult.Value.Id,
                 cancellationToken),
-            _ => Alert("This menu is no longer available.")
+            _ => Alert(TelegramUiText.MenuUnavailable)
         };
     }
 
     private async Task<TelegramCallbackResponse> HandlePolymarketAsync(long userId, TrackedWalletDetails wallet, TelegramCallbackData callback, CancellationToken ct)
     {
-        if (polymarket is null) return Alert("Polymarket is unavailable.");
+        if (polymarket is null) return Alert(TelegramUiText.PolymarketUnavailable);
         var result = await polymarket.GetAsync(userId, wallet.Id, ct);
         if (result.IsFailure) return Alert(result.Error.Description);
         var status = result.Value;
         if (callback.Action != TelegramCallbackAction.Polymarket && callback.Generation != status.Generation)
-            return Alert("This setting changed. Refresh the Polymarket menu.");
+            return Alert(TelegramCallbackProcessorText.PolymarketMenuStale);
         switch (callback.Action)
         {
             case TelegramCallbackAction.PolymarketToggle:
                 result = await polymarket.SetAsync(userId, wallet.Id, !status.Enabled, status.Generation, ct); break;
             case TelegramCallbackAction.PolymarketBind:
-                if (status.ProposedAddress is null) return Alert("No verified trading account is available.");
+                if (status.ProposedAddress is null) return Alert(TelegramCallbackProcessorText.VerifiedAccountMissing);
                 result = await polymarket.BindAsync(userId, wallet.Id, status.ProposedAddress, status.Generation, ct); break;
             case TelegramCallbackAction.PolymarketMinimum:
                 return HandlePrompt(userId, new(PendingTelegramActionType.PolymarketMinimum, WalletId: wallet.Id, Generation: status.Generation),
-                    "Send the Polymarket minimum gross trade value in collateral units (pUSD / USDC.e). Default: 0. Redemptions bypass this minimum.");
+                    TelegramCallbackProcessorText.PolymarketMinimumPrompt);
             case TelegramCallbackAction.PolymarketSource:
                 return HandlePrompt(userId, new(PendingTelegramActionType.PolymarketSource, WalletId: wallet.Id, Generation: status.Generation),
-                    "Send the profile's trading-wallet address. It must be verified by the public profile API. This creates a new binding and leaves tracking off.");
+                    TelegramCallbackProcessorText.PolymarketSourcePrompt);
             case TelegramCallbackAction.PolymarketAlias:
-                if (status.Profile?.PublicName is not { } name) return Alert("No public name is available.");
+                if (status.Profile?.PublicName is not { } name) return Alert(TelegramCallbackProcessorText.PublicNameMissing);
                 var renamed = await sender.Send(new UpdateTrackedWalletAliasCommand(userId, wallet.Id, name), ct);
                 if (renamed.IsFailure) return Alert(renamed.Error.Description);
                 wallet = renamed.Value; break;
@@ -121,20 +122,20 @@ public sealed class TelegramCallbackProcessor(
         status = result.Value;
         var id = wallet.Id.ToString("N");
         var gen = Convert.ToBase64String(status.Generation.ToByteArray()).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        string E(string? value) => System.Net.WebUtility.HtmlEncode(value ?? "Unresolved");
+        string E(string? value) => System.Net.WebUtility.HtmlEncode(value ?? TelegramUiText.Unresolved);
         List<InlineKeyboardButton[]> rows = [
-            [InlineKeyboardButton.WithCallbackData(status.Enabled ? "Turn Off" : "Turn On", $"pm:t:{id}:{gen}")],
-            [InlineKeyboardButton.WithCallbackData("Trade minimum", $"pm:m:{id}:{gen}"), InlineKeyboardButton.WithCallbackData("Supply account", $"pm:s:{id}:{gen}")]
+            [InlineKeyboardButton.WithCallbackData(status.Enabled ? TelegramUiText.TurnOff : TelegramUiText.TurnOn, $"{TelegramInteractionTokens.Callbacks.Polymarket}:{TelegramInteractionTokens.Callbacks.Toggle}:{id}:{gen}")],
+            [InlineKeyboardButton.WithCallbackData(TelegramUiText.TradeMinimum, $"{TelegramInteractionTokens.Callbacks.Polymarket}:{TelegramInteractionTokens.Callbacks.Minimum}:{id}:{gen}"), InlineKeyboardButton.WithCallbackData(TelegramUiText.SupplyAccount, $"{TelegramInteractionTokens.Callbacks.Polymarket}:{TelegramInteractionTokens.Callbacks.Source}:{id}:{gen}")]
         ];
-        if (status.ProposedAddress is not null) rows.Add([InlineKeyboardButton.WithCallbackData("Confirm account / Rebind", $"pm:b:{id}:{gen}")]);
-        if (status.Profile?.PublicName is not null) rows.Add([InlineKeyboardButton.WithCallbackData("Use public name", $"pm:a:{id}:{gen}")]);
-        rows.Add([InlineKeyboardButton.WithCallbackData("Refresh", $"tw:v1:p:{id}"), InlineKeyboardButton.WithCallbackData("Back", $"tw:v1:o:{id}")]);
-        return Edit(new TelegramMenuMessage($"<b>Polymarket</b>\nYour alias: {E(wallet.Alias)}\nPolymarket profile: {E(status.Profile?.PublicName)}\nEntered: <code>{E(status.OriginalAddress)}</code>\nBound account: <code>{E(status.SourceAddress)}</code>\nProposed account: <code>{E(status.ProposedAddress)}</code>\nPolymarket follows the confirmed trading account above.\nTrade minimum: {status.MinimumTradeValue.ToString(System.Globalization.CultureInfo.InvariantCulture)} collateral units (gross)\n{E(status.Status)}", ParseMode.Html, new InlineKeyboardMarkup(rows)));
+        if (status.ProposedAddress is not null) rows.Add([InlineKeyboardButton.WithCallbackData(TelegramCallbackProcessorText.ConfirmAccountRebind, $"{TelegramInteractionTokens.Callbacks.Polymarket}:{TelegramInteractionTokens.Callbacks.Bind}:{id}:{gen}")]);
+        if (status.Profile?.PublicName is not null) rows.Add([InlineKeyboardButton.WithCallbackData(TelegramCallbackProcessorText.UsePublicName, $"{TelegramInteractionTokens.Callbacks.Polymarket}:{TelegramInteractionTokens.Callbacks.Alias}:{id}:{gen}")]);
+        rows.Add([InlineKeyboardButton.WithCallbackData(TelegramUiText.Refresh, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Predictions}:{id}"), InlineKeyboardButton.WithCallbackData(TelegramUiText.Back, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Overview}:{id}")]);
+        return Edit(new TelegramMenuMessage(TelegramCallbackProcessorText.PolymarketDetails(E(wallet.Alias), E(status.Profile?.PublicName), E(status.OriginalAddress), E(status.SourceAddress), E(status.ProposedAddress), status.MinimumTradeValue.ToString(System.Globalization.CultureInfo.InvariantCulture), E(status.Status)), ParseMode.Html, new InlineKeyboardMarkup(rows)));
     }
 
     private async Task<TelegramCallbackResponse> HandleHyperliquidAsync(long userId, TelegramCallbackData callback, CancellationToken ct)
     {
-        if (hyperliquid is null) return Alert("Hyperliquid is unavailable.");
+        if (hyperliquid is null) return Alert(TelegramCallbackProcessorText.HyperliquidIsUnavailable);
         var result = callback.Action == TelegramCallbackAction.HyperliquidToggle && callback.Enabled is { } enabled
             ? await hyperliquid.SetAsync(userId, callback.WalletId, enabled, ct, callback.Generation)
             : await hyperliquid.GetAsync(userId, callback.WalletId, ct);
@@ -142,10 +143,10 @@ public sealed class TelegramCallbackProcessor(
         var status = result.Value;
         var id = callback.WalletId.ToString("N");
         var generation = Convert.ToBase64String(status.Generation.ToByteArray()).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-        return Edit(new TelegramMenuMessage($"<b>Hyperliquid</b>\n{System.Net.WebUtility.HtmlEncode(status.Status)}\nNative USDC perp trades, liquidations, deposits and withdrawals.\nHistory may be delayed or incomplete during recovery.", ParseMode.Html,
+        return Edit(new TelegramMenuMessage(TelegramCallbackProcessorText.HyperliquidDetails(System.Net.WebUtility.HtmlEncode(status.Status)), ParseMode.Html,
             new InlineKeyboardMarkup([
-                [InlineKeyboardButton.WithCallbackData(status.Enabled ? "Turn Off" : "Turn On", $"hc:{id}:{(status.Enabled ? "0" : "1")}:{generation}")],
-                [InlineKeyboardButton.WithCallbackData("Refresh", $"tw:v1:h:{id}"), InlineKeyboardButton.WithCallbackData("Back", $"tw:v1:o:{id}")]
+                [InlineKeyboardButton.WithCallbackData(status.Enabled ? TelegramUiText.TurnOff : TelegramUiText.TurnOn, $"{TelegramInteractionTokens.Callbacks.HyperliquidToggle}:{id}:{(status.Enabled ? TelegramInteractionTokens.Callbacks.Disabled : TelegramInteractionTokens.Callbacks.Enabled)}:{generation}")],
+                [InlineKeyboardButton.WithCallbackData(TelegramUiText.Refresh, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Hyperliquid}:{id}"), InlineKeyboardButton.WithCallbackData(TelegramUiText.Back, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Overview}:{id}")]
             ])));
     }
 
@@ -157,12 +158,12 @@ public sealed class TelegramCallbackProcessor(
     {
         if (callbackData.Chain is not { } chain || callbackData.Enabled is not { } enabled)
         {
-            return Alert("This menu is no longer available.");
+            return Alert(TelegramUiText.MenuUnavailable);
         }
 
         if (!configuredNetworks.Any(network => network.Chain == chain))
         {
-            return Alert("That network is not configured for tracking.");
+            return Alert(TelegramCallbackProcessorText.NetworkNotConfigured);
         }
 
         var result = await sender.Send(
@@ -174,7 +175,7 @@ public sealed class TelegramCallbackProcessor(
             return Alert(result.Error.Description);
         }
 
-        return Edit(RenderNetworks(result.Value), "Updated.");
+        return Edit(RenderNetworks(result.Value), TelegramUiText.Updated);
     }
 
     private async Task<TelegramCallbackResponse> HandleDeleteConfirmAsync(
@@ -193,8 +194,8 @@ public sealed class TelegramCallbackProcessor(
 
         return new TelegramCallbackResponse(
             TelegramCallbackMessageAction.EditMessage,
-            Text: "Tracked wallet deleted.",
-            AnswerText: "Deleted.");
+            Text: TelegramCallbackProcessorText.TrackedWalletDeleted,
+            AnswerText: TelegramUiText.Deleted);
     }
 
     private TelegramCallbackResponse HandlePrompt(
@@ -206,7 +207,7 @@ public sealed class TelegramCallbackProcessor(
         return new TelegramCallbackResponse(
             TelegramCallbackMessageAction.EditMessage,
             Text: prompt,
-            AnswerText: "Waiting for your reply.");
+            AnswerText: TelegramCallbackProcessorText.WaitingForYourReply);
     }
 
     private TelegramMenuMessage RenderOverview(TrackedWalletDetails wallet)

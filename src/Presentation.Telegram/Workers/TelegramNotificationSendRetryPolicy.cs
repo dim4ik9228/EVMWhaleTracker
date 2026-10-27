@@ -45,7 +45,7 @@ internal sealed class TelegramNotificationSendRetryPolicy
             {
                 logger.LogWarning(
                     ex,
-                    "Telegram rate limited notification for chat {ChatId}. Retrying after {RetryAfterDelay}.",
+                    TelegramNotificationSendRetryPolicyText.NotificationRateLimited,
                     chatId,
                     retryAfterDelay);
 
@@ -55,7 +55,7 @@ internal sealed class TelegramNotificationSendRetryPolicy
             {
                 logger.LogWarning(
                     ex,
-                    "Telegram API rejected notification for chat {ChatId} with code {ErrorCode}.",
+                    TelegramNotificationSendRetryPolicyText.NotificationRejected,
                     chatId,
                     ex.ErrorCode);
                 return false;

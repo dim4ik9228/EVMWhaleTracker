@@ -175,7 +175,7 @@ public sealed class WalletTrackerWorker : BackgroundService
         if (tokenMetadataResult.IsFailure)
         {
             _logger.LogDebug(
-                "Skipping ERC-20 transfer {TransactionHash} because token metadata for {TokenContractAddress} could not be resolved: {Error}.",
+                WalletTrackerWorkerDiagnostics.MetadataUnavailable,
                 transferLog.TransactionHash,
                 transferLog.TokenContractAddress,
                 tokenMetadataResult.Error.Description);
@@ -294,7 +294,7 @@ public sealed class WalletTrackerWorker : BackgroundService
         if (priceResult.IsFailure)
         {
             _logger.LogWarning(
-                "Could not resolve USD price for {AssetSymbol} on {Chain}. Sending notification without USD value and without applying minimum value threshold. Error: {Error}.",
+                WalletTrackerWorkerDiagnostics.CouldNotResolveUSDPriceForOnSending,
                 assetSymbol,
                 chain,
                 priceResult.Error.Description);

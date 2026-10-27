@@ -1,3 +1,4 @@
+using Domain.Common;
 using System.Text.Json;
 using Application.Hyperliquid;
 using Domain.Entities;
@@ -28,10 +29,10 @@ public sealed class HyperliquidDeliveryWorker(IServiceScopeFactory scopes, IOpti
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var now = DateTimeOffset.UtcNow;
                 if (++healthTick % 240 == 0)
-                    logger.LogInformation("Hyperliquid outbox backlog {PendingDeliveries}, failures {FailedDeliveries}",
-                        await db.Set<HyperliquidDelivery>().CountAsync(x => x.State == "Pending", ct),
-                        await db.Set<HyperliquidDelivery>().CountAsync(x => x.State == "Failed", ct));
-                var dueUsers = db.Set<HyperliquidDelivery>().Where(x => x.State == "Pending" && x.DueAt <= now)
+                    logger.LogInformation(HyperliquidDeliveryWorkerDiagnostics.HyperliquidOutboxBacklogFailures,
+                        await db.Set<HyperliquidDelivery>().CountAsync(x => x.State == RuntimeStates.Delivery.Pending, ct),
+                        await db.Set<HyperliquidDelivery>().CountAsync(x => x.State == RuntimeStates.Delivery.Failed, ct));
+                var dueUsers = db.Set<HyperliquidDelivery>().Where(x => x.State == RuntimeStates.Delivery.Pending && x.DueAt <= now)
                     .Select(x => x.UserId).Distinct();
                 // A bounded cursor rotates across recipients even when earlier chats never drain.
                 var users = await dueUsers.Where(id => id > _lastRecipient).OrderBy(id => id).Take(4).ToListAsync(ct);
@@ -41,7 +42,7 @@ public sealed class HyperliquidDeliveryWorker(IServiceScopeFactory scopes, IOpti
                 await Task.Delay(250, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
-            catch (Exception ex) { logger.LogError(ex, "Hyperliquid durable delivery scheduling failed"); await Task.Delay(2000, ct); }
+            catch (Exception ex) { logger.LogError(ex, HyperliquidDeliveryWorkerDiagnostics.HyperliquidDurableDeliverySchedulingFailed); await Task.Delay(2000, ct); }
         }
     }
 
@@ -58,19 +59,19 @@ public sealed class HyperliquidDeliveryWorker(IServiceScopeFactory scopes, IOpti
         try
         {
             var now = DateTimeOffset.UtcNow;
-            var pending = await db.Set<HyperliquidDelivery>().Where(x => x.State == "Pending" && x.UserId == userId && x.DueAt <= now)
+            var pending = await db.Set<HyperliquidDelivery>().Where(x => x.State == RuntimeStates.Delivery.Pending && x.UserId == userId && x.DueAt <= now)
                 .OrderBy(x => x.DueAt).Take(100).ToListAsync(ct);
             if (pending.Count == 0) return;
             var first = pending[0];
             var setting = await db.Set<HyperliquidSetting>().AsNoTracking().SingleOrDefaultAsync(x => x.WalletId == first.WalletId, ct);
             var wallet = await db.TrackedWallets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == first.WalletId && x.UserId == userId, ct);
             if (setting?.Enabled != true || setting.Generation != first.Generation || wallet is null)
-            { first.State = "Cancelled"; await db.SaveChangesAsync(ct); return; }
+            { first.State = RuntimeStates.Delivery.Cancelled; await db.SaveChangesAsync(ct); return; }
             var events = await db.Set<HyperliquidEvent>().Where(x => pending.Select(d => d.EventId).Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
             var activity = JsonSerializer.Deserialize<HyperliquidActivity>(events[first.EventId].Payload)!;
             var selected = new List<HyperliquidDelivery> { first };
             var activities = new List<HyperliquidActivity> { activity };
-            if (activity.Stream == "userFills")
+            if (activity.Stream == HyperliquidTokens.Streams.Fills)
             {
                 var bucket = activity.Time / options.Value.AggregationMilliseconds;
                 foreach (var d in pending.Skip(1).Where(x => x.WalletId == first.WalletId && x.Generation == first.Generation))
@@ -83,7 +84,7 @@ public sealed class HyperliquidDeliveryWorker(IServiceScopeFactory scopes, IOpti
             // Preferences can change after durable fan-out; each original fill still needs to qualify.
             var eligible = activities.Where(a => a.Time >= setting.ActivatedAt.ToUnixTimeMilliseconds() && !a.LiquidatedVictim
                 && (a.Usd is null || a.Usd >= wallet.MinimumUsdValue)).ToList();
-            if (eligible.Count == 0) { foreach (var d in selected) d.State = "Cancelled"; await db.SaveChangesAsync(ct); return; }
+            if (eligible.Count == 0) { foreach (var d in selected) d.State = RuntimeStates.Delivery.Cancelled; await db.SaveChangesAsync(ct); return; }
             var fresh = await db.Set<HyperliquidSetting>().AsNoTracking().SingleOrDefaultAsync(x => x.WalletId == wallet.Id, ct);
             if (fresh?.Enabled != true || fresh.Generation != first.Generation) return;
             var success = false;
@@ -95,14 +96,14 @@ public sealed class HyperliquidDeliveryWorker(IServiceScopeFactory scopes, IOpti
                         && currentWallet is not null && eligible.All(a => a.Usd is null || a.Usd >= currentWallet.MinimumUsdValue);
                 }, ct); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception ex) { logger.LogWarning(ex, "Core delivery transport failed for recipient {UserId}", userId); }
+            catch (Exception ex) { logger.LogWarning(ex, HyperliquidDeliveryWorkerDiagnostics.CoreDeliveryTransportFailedForRecipient, userId); }
             var afterAttempt = await db.Set<HyperliquidSetting>().AsNoTracking().SingleOrDefaultAsync(x => x.WalletId == wallet.Id, ct);
             var optedOut = afterAttempt?.Enabled != true || afterAttempt.Generation != first.Generation;
             foreach (var d in selected)
             {
-                if (optedOut) { d.State = "Cancelled"; continue; }
+                if (optedOut) { d.State = RuntimeStates.Delivery.Cancelled; continue; }
                 d.Attempts++;
-                d.State = success ? "Sent" : d.Attempts >= 5 ? "Failed" : "Pending";
+                d.State = success ? RuntimeStates.Delivery.Sent : d.Attempts >= 5 ? RuntimeStates.Delivery.Failed : RuntimeStates.Delivery.Pending;
                 d.DueAt = DateTimeOffset.UtcNow.AddSeconds(Math.Min(300, Math.Pow(2, d.Attempts) * 5));
             }
             await db.SaveChangesAsync(ct);

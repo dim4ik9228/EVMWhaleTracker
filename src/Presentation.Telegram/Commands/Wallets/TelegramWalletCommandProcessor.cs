@@ -20,7 +20,6 @@ public sealed class TelegramWalletCommandProcessor(
     IPolymarketProfileResolver? polymarket = null)
     : ITelegramWalletCommandProcessor
 {
-    private const string AliasPrompt = "Please give a name to this wallet";
 
     /// <inheritdoc />
     public async Task<TelegramCommandResponse> HandleAddAsync(
@@ -50,8 +49,8 @@ public sealed class TelegramWalletCommandProcessor(
             var profile = polymarket is null ? null : await polymarket.ResolveAsync(rawAddress, cancellationToken);
             var suggestion = profile?.Profile?.PublicName;
             pendingActions.Set(telegramUserId, PendingTelegramAction.AddWalletAlias(rawAddress) with { SuggestedAlias = suggestion });
-            return new TelegramCommandResponse(string.IsNullOrWhiteSpace(suggestion) ? AliasPrompt
-                : $"Polymarket {(profile!.Profile!.DisplayUsernamePublic ? "public name" : "pseudonym")}: <b>{TelegramCommandText.HtmlEncode(suggestion)}</b>\nReply <code>use</code> to use this suggestion, or send your own name.");
+            return new TelegramCommandResponse(string.IsNullOrWhiteSpace(suggestion) ? TelegramUiText.AliasPrompt
+                : TelegramWalletCommandProcessorText.ProfileNameSuggestion((profile!.Profile!.DisplayUsernamePublic ? TelegramUiText.PublicName : TelegramUiText.Pseudonym), TelegramCommandText.HtmlEncode(suggestion)));
         }
 
         return await AddWalletAsync(telegramUserId, rawAddress, alias, cancellationToken);
@@ -68,13 +67,13 @@ public sealed class TelegramWalletCommandProcessor(
 
         if (result.Value.Count == 0)
         {
-            return new TelegramCommandResponse("You are not tracking any wallets yet.");
+            return new TelegramCommandResponse(TelegramWalletCommandProcessorText.WatchlistEmpty);
         }
 
         var botUsername = await botUsernameProvider.GetBotUsernameAsync(cancellationToken);
         var lines = new List<string>
         {
-            "Your Wallets Watchlist:",
+            TelegramWalletCommandProcessorText.WatchlistHeading,
             string.Empty
         };
 
@@ -109,11 +108,7 @@ public sealed class TelegramWalletCommandProcessor(
         }
 
         return new TelegramCommandResponse(
-            $"""
-            Tracked wallet removed successfully.
-
-            Address: <code>{TelegramCommandText.HtmlEncode(rawAddress)}</code>
-            """);
+            TelegramWalletCommandProcessorText.WalletRemoved(TelegramCommandText.HtmlEncode(rawAddress)));
     }
 
     /// <inheritdoc />
@@ -138,13 +133,7 @@ public sealed class TelegramWalletCommandProcessor(
         var wallet = result.Value;
         var botUsername = await botUsernameProvider.GetBotUsernameAsync(cancellationToken);
         var responseText =
-            $"""
-            Added to watchlist ✅
-
-            {FormatWatchlistLine(wallet, botUsername)}
-            Minimum USD: <code>${TelegramCommandText.FormatDecimal(wallet.MinimumUsdValue)}</code>
-            Networks: <code>{TelegramCommandText.HtmlEncode(TelegramCommandText.FormatChains(wallet.EnabledChains))}</code>
-            """;
+            TelegramWalletCommandProcessorText.WalletAdded(FormatWatchlistLine(wallet, botUsername), TelegramCommandText.FormatDecimal(wallet.MinimumUsdValue), TelegramCommandText.HtmlEncode(TelegramCommandText.FormatChains(wallet.EnabledChains)));
 
         return new TelegramCommandResponse(responseText);
     }
@@ -161,7 +150,7 @@ public sealed class TelegramWalletCommandProcessor(
 
         if (string.IsNullOrWhiteSpace(arguments))
         {
-            errorText = "Usage: /add &lt;address&gt; [name]";
+            errorText = TelegramWalletCommandProcessorText.AddUsage;
             return false;
         }
 
@@ -179,14 +168,14 @@ public sealed class TelegramWalletCommandProcessor(
 
         if (string.IsNullOrWhiteSpace(arguments))
         {
-            errorText = "Usage: /remove &lt;address&gt;";
+            errorText = TelegramWalletCommandProcessorText.RemoveUsage;
             return false;
         }
 
         var parts = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length != 1)
         {
-            errorText = "Usage: /remove &lt;address&gt;";
+            errorText = TelegramWalletCommandProcessorText.RemoveUsage;
             return false;
         }
 
@@ -200,11 +189,11 @@ public sealed class TelegramWalletCommandProcessor(
             ? ShortAddress(wallet.Address)
             : wallet.Alias;
         var line =
-            $"<b>{TelegramCommandText.HtmlEncode(displayName)}</b> · <code>{TelegramCommandText.HtmlEncode(ShortAddress(wallet.Address))}</code>";
+            TelegramWalletCommandProcessorText.WalletListEntry(TelegramCommandText.HtmlEncode(displayName), TelegramCommandText.HtmlEncode(ShortAddress(wallet.Address)));
 
         if (!string.IsNullOrWhiteSpace(botUsername))
         {
-            line += $" | <a href=\"{BuildEditDeepLink(botUsername, wallet.Id)}\">✏️</a>";
+            line += TelegramWalletCommandProcessorText.HtmlLink(BuildEditDeepLink(botUsername, wallet.Id));
         }
 
         return line;
@@ -216,6 +205,6 @@ public sealed class TelegramWalletCommandProcessor(
     private static string BuildEditDeepLink(string botUsername, Guid walletId)
     {
         var normalizedBotUsername = botUsername.Trim().TrimStart('@');
-        return $"https://t.me/{Uri.EscapeDataString(normalizedBotUsername)}?start=edit_wallet_{walletId:N}";
+        return $"https://t.me/{Uri.EscapeDataString(normalizedBotUsername)}?start={TelegramInteractionTokens.EditWalletPrefix}{walletId:N}";
     }
 }

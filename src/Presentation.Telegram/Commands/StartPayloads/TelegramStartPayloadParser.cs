@@ -1,3 +1,4 @@
+using Presentation.Telegram.Commands;
 namespace Presentation.Telegram.Commands.StartPayloads;
 
 /// <summary>
@@ -5,7 +6,6 @@ namespace Presentation.Telegram.Commands.StartPayloads;
 /// </summary>
 public static class TelegramStartPayloadParser
 {
-    private const string EditWalletPrefix = "edit_wallet_";
 
     /// <summary>
     /// Extracts the wallet id from an edit-wallet deep-link payload in Guid N format.
@@ -15,12 +15,12 @@ public static class TelegramStartPayloadParser
         walletId = Guid.Empty;
 
         if (string.IsNullOrWhiteSpace(payload)
-            || !payload.StartsWith(EditWalletPrefix, StringComparison.OrdinalIgnoreCase))
+            || !payload.StartsWith(TelegramInteractionTokens.EditWalletPrefix, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        var rawWalletId = payload[EditWalletPrefix.Length..];
+        var rawWalletId = payload[TelegramInteractionTokens.EditWalletPrefix.Length..];
         return Guid.TryParseExact(rawWalletId, "N", out walletId);
     }
 }

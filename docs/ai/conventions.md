@@ -68,3 +68,10 @@ dotnet ef migrations add MigrationName `
 - Prefer updating existing architecture or decision docs over creating duplicate explanations.
 - If code behavior changes, update any affected docs in the same change.
 - Avoid storing secrets, RPC keys, bot tokens, wallet private keys, or real user-sensitive data in docs.
+
+## Named Errors and Runtime Strings
+
+- Define named errors in the layer owning the rule or contract. `Domain.Common.Errors` contains entity/value-object invariants; Application owns use-case/port errors such as `PolymarketErrors.ProviderUnavailable`, `HyperliquidErrors`, `AssetPriceErrors` and `TokenMetadataErrors`; Infrastructure owns adapter-specific errors such as seed-file/schema validation. The common `Error`/`Result` primitives can remain in Domain without putting every error catalog there. Do not pass descriptions to `Failure`, `InvalidSeed` or equivalent wrappers; named factories accept structured values, not arbitrary prose. See [error ownership](../plans/error-catalog-layer-ownership.md).
+- Keep Telegram copy/templates in presentation text catalogs and exception/log templates in the owning diagnostic catalog. Use concise semantic names and descriptive formatter parameters; preserve escaping and culture at existing boundaries.
+- Share persisted state and protocol/callback tokens through the appropriate named catalogs. Constants used in EF queries or patterns must remain constant expressions. Preserve stored/wire values, error codes, option names and callback bytes when refactoring.
+- Generated EF artifacts, schema/data declarations, JSON field names, declared configuration defaults, SQL/regex/format syntax, empty values and punctuation do not require mechanical extraction. Named route/cache/identity formatters may own their literal syntax. See [the refactor scope](../plans/named-errors-and-string-catalogs.md).

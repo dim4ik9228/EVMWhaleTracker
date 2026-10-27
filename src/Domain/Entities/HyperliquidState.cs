@@ -1,3 +1,4 @@
+using Domain.Common;
 namespace Domain.Entities;
 
 /// <summary>Independent, owner-specific HyperCore enrollment; generations invalidate queued deliveries.</summary>
@@ -42,7 +43,7 @@ public sealed class HyperliquidDelivery
     public Guid WalletId { get; set; }
     public Guid Generation { get; set; }
     public long UserId { get; set; }
-    public string State { get; set; } = "Pending";
+    public string State { get; set; } = RuntimeStates.Delivery.Pending;
     public int Attempts { get; set; }
     public DateTimeOffset DueAt { get; set; }
 }

@@ -1,3 +1,4 @@
+using Domain.Common;
 using System.Net;
 using System.Text.Json;
 using Application.Polymarket;
@@ -16,14 +17,14 @@ public sealed class PolymarketProfileResolver(HttpClient client, IOptions<Polyma
     private int _requests;
     public async Task<PolymarketProfileLookup> ResolveAsync(string address, CancellationToken ct)
     {
-        if (!options.Value.Enabled) return new("Off", null);
+        if (!options.Value.Enabled) return new(RuntimeStates.Profile.Off, null);
         var normalized = Address.Normalize(address);
-        if (normalized.IsFailure) return new("Unresolved", null);
+        if (normalized.IsFailure) return new(RuntimeStates.Profile.Unresolved, null);
         address = normalized.Value.Value.ToLowerInvariant();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(options.Value.TimeoutSeconds));
         try { await _gate.WaitAsync(timeout.Token); }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return new("Unavailable", null); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return new(RuntimeStates.Profile.Unavailable, null); }
         try
         {
             _cache.TryGetValue(address, out var cached);
@@ -36,12 +37,12 @@ public sealed class PolymarketProfileResolver(HttpClient client, IOptions<Polyma
                     _requests = 0;
                 }
                 if (_requests >= options.Value.RequestsPerMinute)
-                    throw new HttpRequestException("Public profile request budget exhausted.");
+                    throw new HttpRequestException(PolymarketProfileResolverDiagnostics.PublicProfileRequestBudgetExhausted);
                 _requests++;
                 using var response = await client.GetAsync(options.Value.ProfileUrl + "?address=" + Uri.EscapeDataString(address),
                     HttpCompletionOption.ResponseHeadersRead, timeout.Token);
                 PolymarketProfileLookup result;
-                if (response.StatusCode == HttpStatusCode.NotFound) result = new("Missing", null);
+                if (response.StatusCode == HttpStatusCode.NotFound) result = new(RuntimeStates.Profile.Missing, null);
                 else
                 {
                     response.EnsureSuccessStatusCode();
@@ -50,33 +51,33 @@ public sealed class PolymarketProfileResolver(HttpClient client, IOptions<Polyma
                     var bytes = new byte[8192]; int count;
                     while ((count = await stream.ReadAsync(bytes, timeout.Token)) > 0)
                     {
-                        if (buffer.Length + count > options.Value.MaximumResponseBytes) throw new InvalidDataException("Profile response exceeds limit.");
+                        if (buffer.Length + count > options.Value.MaximumResponseBytes) throw new InvalidDataException(PolymarketProfileResolverDiagnostics.ProfileResponseExceedsLimit);
                         buffer.Write(bytes, 0, count);
                     }
                     using var json = JsonDocument.Parse(buffer.ToArray());
                     var root = json.RootElement;
-                    if (root.ValueKind == JsonValueKind.Null) result = new("Missing", null);
-                    else if (root.ValueKind != JsonValueKind.Object) throw new InvalidDataException("Expected public profile object.");
+                    if (root.ValueKind == JsonValueKind.Null) result = new(RuntimeStates.Profile.Missing, null);
+                    else if (root.ValueKind != JsonValueKind.Object) throw new InvalidDataException(PolymarketProfileResolverDiagnostics.ExpectedPublicProfileObject);
                     else
                     {
-                        if (!root.TryGetProperty("proxyWallet", out _)) throw new InvalidDataException("Missing documented profile identity field.");
+                        if (!root.TryGetProperty("proxyWallet", out _)) throw new InvalidDataException(PolymarketProfileResolverDiagnostics.MissingDocumentedProfileIdentityField);
                         var proxyValue = root.GetProperty("proxyWallet");
                         if (proxyValue.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))
-                            throw new InvalidDataException("Invalid public profile trading-wallet type.");
+                            throw new InvalidDataException(PolymarketProfileResolverDiagnostics.InvalidPublicProfileTradingWalletType);
                         var proxy = proxyValue.ValueKind == JsonValueKind.String ? proxyValue.GetString() : null;
                         var valid = proxy is null ? null : Address.Normalize(proxy);
                         if (valid?.IsFailure == true)
-                            throw new InvalidDataException("Invalid public profile trading-wallet address.");
+                            throw new InvalidDataException(PolymarketProfileResolverDiagnostics.InvalidPublicProfileTradingWalletAddress);
                         var trading = valid?.IsSuccess == true ? valid.Value.Value.ToLowerInvariant() : null;
                         var profile = new PolymarketProfile(address, trading, Text(root, "name", 100), Text(root, "pseudonym", 100),
                             root.TryGetProperty("displayUsernamePublic", out var visible) && visible.ValueKind == JsonValueKind.True,
-                            DateTimeOffset.UtcNow, "Gamma public-profile");
-                        result = new("Found", profile);
+                            DateTimeOffset.UtcNow, PolymarketProfileResolverDiagnostics.GammaPublicProfile);
+                        result = new(RuntimeStates.Profile.Found, profile);
                     }
                 }
                 if (_cache.Count >= options.Value.ProfileCacheCapacity && !_cache.ContainsKey(address))
                     _cache.Remove(_cache.OrderBy(x => x.Value.Expires).First().Key);
-                _cache[address] = new(result, DateTimeOffset.UtcNow.Add(result.State == "Found"
+                _cache[address] = new(result, DateTimeOffset.UtcNow.Add(result.State == RuntimeStates.Profile.Found
                     ? TimeSpan.FromHours(options.Value.ProfileTtlHours) : TimeSpan.FromMinutes(options.Value.MissingProfileTtlMinutes)));
                 return result;
             }
@@ -84,7 +85,7 @@ public sealed class PolymarketProfileResolver(HttpClient client, IOptions<Polyma
             catch (Exception ex) when (ex is HttpRequestException or JsonException or InvalidDataException or IOException or OperationCanceledException)
             {
                 // Briefly cache transport failures without confusing them with confirmed absence.
-                var result = cached?.Value.Profile is not null ? cached.Value with { State = "Unavailable", Stale = true } : new PolymarketProfileLookup("Unavailable", null);
+                var result = cached?.Value.Profile is not null ? cached.Value with { State = RuntimeStates.Profile.Unavailable, Stale = true } : new PolymarketProfileLookup(RuntimeStates.Profile.Unavailable, null);
                 if (_cache.Count >= options.Value.ProfileCacheCapacity && !_cache.ContainsKey(address))
                     _cache.Remove(_cache.OrderBy(x => x.Value.Expires).First().Key);
                 _cache[address] = new(result, DateTimeOffset.UtcNow.AddSeconds(30));

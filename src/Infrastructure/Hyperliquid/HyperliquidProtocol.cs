@@ -13,7 +13,7 @@ public static class HyperliquidProtocol
     {
         address = address.ToLowerInvariant();
         var time = row.GetProperty("time").GetInt64();
-        if (stream == "userFills")
+        if (stream == HyperliquidTokens.Streams.Fills)
         {
             var coin = Text(row, "coin");
             if (!markets.Contains(coin) || coin.Contains(':') || coin.StartsWith('@')) return null;
@@ -21,31 +21,31 @@ public static class HyperliquidProtocol
             var price = Number(row, "px");
             if (size <= 0 || price <= 0) return null;
             var side = Text(row, "side");
-            if (side is not ("B" or "A")) return null;
+            if (side is not (HyperliquidWireTokens.BuySide or HyperliquidWireTokens.SellSide)) return null;
             var start = Number(row, "startPosition");
-            var end = start + (side == "B" ? size : -size);
-            var effect = start == 0 ? (end > 0 ? "Open long" : "Open short")
-                : end == 0 ? "Close position" : Math.Sign(end) != Math.Sign(start) ? "Flip position"
-                : Math.Abs(end) > Math.Abs(start) ? "Increase position" : "Reduce position";
-            var victim = row.TryGetProperty("liquidation", out var liquidation) && liquidation.ValueKind == JsonValueKind.Object
+            var end = start + (side == HyperliquidWireTokens.BuySide ? size : -size);
+            var effect = start == 0 ? (end > 0 ? HyperliquidTokens.Actions.OpenLong : HyperliquidTokens.Actions.OpenShort)
+                : end == 0 ? HyperliquidTokens.Actions.ClosePosition : Math.Sign(end) != Math.Sign(start) ? HyperliquidTokens.Actions.FlipPosition
+                : Math.Abs(end) > Math.Abs(start) ? HyperliquidTokens.Actions.IncreasePosition : HyperliquidTokens.Actions.ReducePosition;
+            var victim = row.TryGetProperty(HyperliquidTokens.Actions.Liquidation, out var liquidation) && liquidation.ValueKind == JsonValueKind.Object
                 && Text(liquidation, "liquidatedUser").Equals(address, StringComparison.OrdinalIgnoreCase);
             var tid = row.GetProperty("tid").GetRawText();
             var order = row.GetProperty("oid").GetRawText();
             // The documented trade identity includes block time; tid alone can recur across blocks.
-            var id = $"HyperCore|{address}|fills|{time}|{coin}|{tid}|{order}";
+            var id = HyperliquidWireTokens.FillIdentity(address, time, coin, tid, order);
             return new(id, address, stream, time, effect, coin, order, size, price, Math.Abs(size * price),
                 row.TryGetProperty("closedPnl", out _) ? Number(row, "closedPnl") : null, victim, TransactionHash: ValidTransactionHash(Text(row, "hash")),
-                PositionSide: (effect == "Flip position" ? end : start == 0 ? end : start) > 0 ? "Long" : "Short");
+                PositionSide: (effect == HyperliquidTokens.Actions.FlipPosition ? end : start == 0 ? end : start) > 0 ? HyperliquidTokens.Positions.Long : HyperliquidTokens.Positions.Short);
         }
-        if (stream != "userNonFundingLedgerUpdates") return null;
+        if (stream != HyperliquidTokens.Streams.Ledger) return null;
         var delta = row.GetProperty("delta");
         var kind = Text(delta, "type");
-        if (kind is not ("deposit" or "withdraw" or "liquidation")) return null;
+        if (kind is not (HyperliquidTokens.Actions.Deposit or HyperliquidTokens.Actions.Withdraw or HyperliquidTokens.Actions.Liquidation)) return null;
         // Canonical sorted JSON includes the complete delta (including liquidated positions), time and hash.
         var canonical = Canonical(row);
         var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
-        decimal? usd = kind == "liquidation" ? null : Math.Abs(Number(delta, "usdc"));
-        return new($"HyperCore|{address}|ledger|{key}", address, stream, time, kind, "USDC", "", usd ?? 0, 1, usd, null, LedgerFacts: kind == "liquidation" ? Canonical(delta) : null, TransactionHash: ValidTransactionHash(Text(row, "hash")));
+        decimal? usd = kind == HyperliquidTokens.Actions.Liquidation ? null : Math.Abs(Number(delta, "usdc"));
+        return new(HyperliquidWireTokens.LedgerIdentity(address, key), address, stream, time, kind, HyperliquidTokens.Currencies.Usdc, "", usd ?? 0, 1, usd, null, LedgerFacts: kind == HyperliquidTokens.Actions.Liquidation ? Canonical(delta) : null, TransactionHash: ValidTransactionHash(Text(row, "hash")));
     }
 
     /// <summary>Only real full-width source hashes can become explorer transaction links.</summary>
