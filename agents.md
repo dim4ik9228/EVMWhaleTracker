@@ -14,6 +14,10 @@ Before implementation or review, read [current runtime context](docs/ai/context.
 6. The coordinator checks the combined result, runs appropriate validation, updates affected docs, and reports completed behavior and material validation limits. Never claim an unexecuted check passed.
 7. Trivial edits, explanations, and read-only summaries may stay in the main thread. Configuration/documentation work may use a coordinator implementation and an independent review without two coding passes. Avoid agents whose work does not improve the result.
 
+## Manual Live Acceptance
+
+Reusable running-software checks live in [docs/testing/live/README.md](docs/testing/live/README.md). Read and execute only the relevant cases when the user explicitly asks for live validation (for example, "Run the live Polymarket smoke checks"). Do not automatically run them after edits, builds or deployments, or when asked to author cases. Follow their observation budgets, evidence standards and temporary-wallet cleanup; ordinary live checks do not authorize trades, global configuration changes or service restarts. Store run-specific reports privately under Git-ignored `artifacts/live-validation/` or outside the Docker build context.
+
 ## Roles and Configuration
 
 The source of truth for model and reasoning assignments is [.codex/config.toml](.codex/config.toml) and the role files in `.codex/agents/`:

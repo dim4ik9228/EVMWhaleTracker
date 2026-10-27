@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 .docker/
+artifacts/live-validation/
 .vs
 **/bin
 **/obj

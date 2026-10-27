@@ -8,6 +8,7 @@ Use this guide when adding AI-generated notes, implementation plans, or project 
 - `docs/ai/`: AI-facing context and working conventions.
 - `docs/plans/`: implementation plans and feature/fix plans.
 - `docs/architecture/`: long-lived system design notes.
+- `docs/testing/live/`: reusable, manually invoked live acceptance cases and a report template; private execution reports go under Git-ignored `artifacts/live-validation/`.
 - `docs/decisions/`: accepted architecture decisions.
 
 ## Plan Files

@@ -64,6 +64,7 @@ On Ethereum cache misses, the bot can also use ENS reverse lookup through the co
 - AI/project context: `docs/ai/context.md`
 - AI documentation conventions: `docs/ai/conventions.md`
 - Development subagent workflow and model roles: `docs/ai/development-workflow.md`
+- Manual live acceptance checks (explicit prompt only): [runbooks](docs/testing/live/README.md)
 - Address labels and seed import: `docs/address-labels.md`
 - Tracking pipeline architecture: `docs/architecture/tracking-pipeline.md`
 - Architecture decisions: `docs/decisions/`
