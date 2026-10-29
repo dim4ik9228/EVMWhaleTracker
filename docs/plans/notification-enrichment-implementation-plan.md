@@ -3,6 +3,8 @@
 Status: completed
 Date: 2026-06-11
 
+The historical unavailable-price behavior below is superseded by [the 2026-10-28 EVM USD filter fix](unpriced-transfer-usd-filter.md): positive wallet minimums now suppress unpriced transfers; zero retains amount-only alerts.
+
 The product-active notification enrichment work in this plan is complete. Native transfer enrichment is implemented in code but intentionally disabled/deferred at runtime. Inline notification editing remains outside this plan.
 
 This plan covers the roadmap objectives:

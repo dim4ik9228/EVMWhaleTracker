@@ -44,7 +44,7 @@ Steps:
 2. Observe within the remaining run budget. Compare a natural token-transfer alert to the chain explorer: chain, transaction, direction, token, amount and counterparty.
 3. Check wallet/token/transaction links and the pencil link, if shown; the editor must open this temporary wallet.
 
-Expected: a matching transfer reaches the correct recipient with correct token units and chain links. Missing USD prices must not fabricate value or suppress the transfer solely due to unavailable pricing. A transaction may contain multiple transfer lines; do not mistake them for duplicate transactions.
+Expected: a matching transfer reaches the correct recipient with correct token units and chain links. At the zero minimum used in this case, missing USD prices retain amount-only alerts without fabricating value. A positive EVM minimum suppresses unpriced transfers; validating that suppression requires an independently observed qualifying event and processing evidence, not silence alone. A transaction may contain multiple transfer lines; do not mistake them for duplicate transactions.
 
 Evidence: public transaction, enrollment time, alert facts and destination editor. No suitable event within budget means `Inconclusive`.
 

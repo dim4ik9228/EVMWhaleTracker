@@ -282,7 +282,7 @@ public sealed class WalletTrackerWorker : BackgroundService
         string? tokenContractAddress,
         string assetSymbol,
         decimal amount,
-        decimal MinimumUsdValue,
+        decimal minimumUsdValue,
         CancellationToken cancellationToken)
     {
         var priceResult = await _assetPriceProvider.GetUsdPriceAsync(
@@ -294,15 +294,17 @@ public sealed class WalletTrackerWorker : BackgroundService
         if (priceResult.IsFailure)
         {
             _logger.LogWarning(
-                WalletTrackerWorkerDiagnostics.CouldNotResolveUSDPriceForOnSending,
+                minimumUsdValue > 0
+                    ? WalletTrackerWorkerDiagnostics.UnpricedTransferSuppressed
+                    : WalletTrackerWorkerDiagnostics.UnpricedTransferAllowed,
                 assetSymbol,
                 chain,
                 priceResult.Error.Description);
-            return new UsdResolution(true, null);
+            return new UsdResolution(minimumUsdValue == 0, null);
         }
 
         var value = amount * priceResult.Value.PriceUsd;
-        return value >= MinimumUsdValue
+        return value >= minimumUsdValue
             ? new UsdResolution(true, value)
             : new UsdResolution(false, value);
     }

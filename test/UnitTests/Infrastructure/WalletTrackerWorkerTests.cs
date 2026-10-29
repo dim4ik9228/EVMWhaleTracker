@@ -19,7 +19,7 @@ public sealed class WalletTrackerWorkerTests
     [InlineData(SupportedChain.Robinhood, NotificationOperation.SelfTransfer)]
     public async Task NewChains_MatchTokenDirectionsAndUseTokenDecimalsWithoutUsd(SupportedChain chain, NotificationOperation operation)
     {
-        await using var fixture = new WalletTrackerWorkerFixture(new FailingAssetPriceProvider(), enabledChains: []);
+        await using var fixture = new WalletTrackerWorkerFixture(new FailingAssetPriceProvider(), enabledChains: [], minimumUsdValue: 0m);
         var worker = fixture.CreateWorker();
         await worker.StartAsync(CancellationToken.None);
         const string other = "0x1111111111111111111111111111111111111111";
@@ -158,7 +158,7 @@ public sealed class WalletTrackerWorkerTests
     [Fact]
     public async Task ExecuteAsync_EmitsNotification_WhenUsdPriceResolutionFails()
     {
-        await using var fixture = new WalletTrackerWorkerFixture(priceProvider: new FailingAssetPriceProvider());
+        await using var fixture = new WalletTrackerWorkerFixture(priceProvider: new FailingAssetPriceProvider(), minimumUsdValue: 0m);
 
         var worker = fixture.CreateWorker();
         await worker.StartAsync(CancellationToken.None);
@@ -330,6 +330,81 @@ public sealed class WalletTrackerWorkerTests
         await fixture.StopWorkerAsync(worker);
     }
 
+    [Theory]
+    [InlineData(false, 0, true)]
+    [InlineData(false, 1, false)]
+    [InlineData(true, 0, true)]
+    [InlineData(true, 1, false)]
+    public async Task UnpricedTransfer_RequiresZeroMinimum(bool token, int minimum, bool shouldSend)
+    {
+        await using var fixture = new WalletTrackerWorkerFixture(new FailingAssetPriceProvider(), minimumUsdValue: minimum);
+        using var worker = fixture.CreateWorker();
+        await worker.StartAsync(CancellationToken.None);
+        await fixture.Channels.RawBlockDataChannel.Writer.WriteAsync(FilterTestBlock(token));
+        fixture.Channels.RawBlockDataChannel.Writer.Complete();
+        await worker.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(shouldSend, fixture.Channels.NotificationPayloadChannel.Reader.TryRead(out var payload));
+        if (shouldSend)
+        {
+            Assert.Equal(token ? 252.582704m : 2.5m, payload!.Amount);
+            Assert.Null(payload.UsdValue);
+        }
+        Assert.False(fixture.Channels.NotificationPayloadChannel.Reader.TryRead(out _));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UnpricedTransfer_EvaluatesEachRecipientIndependently(bool token)
+    {
+        await using var fixture = new WalletTrackerWorkerFixture(new FailingAssetPriceProvider(), minimumUsdValue: 1m);
+        var zeroMinimumWallet = TrackedWallet.Create(TrackedAddress, 8888, minimumUsdValue: 0m);
+        Assert.True(zeroMinimumWallet.IsSuccess);
+        fixture.Cache.Add(zeroMinimumWallet.Value);
+        using var worker = fixture.CreateWorker();
+        await worker.StartAsync(CancellationToken.None);
+        await fixture.Channels.RawBlockDataChannel.Writer.WriteAsync(FilterTestBlock(token));
+        fixture.Channels.RawBlockDataChannel.Writer.Complete();
+        await worker.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(fixture.Channels.NotificationPayloadChannel.Reader.TryRead(out var payload));
+        Assert.Equal(8888, payload.TelegramUserId);
+        Assert.Equal(zeroMinimumWallet.Value.Id, payload.TrackedWalletId);
+        Assert.Null(payload.UsdValue);
+        Assert.False(fixture.Channels.NotificationPayloadChannel.Reader.TryRead(out _));
+    }
+
+    [Theory]
+    [InlineData(false, 4.99, true)]
+    [InlineData(false, 5, true)]
+    [InlineData(false, 5.01, false)]
+    [InlineData(true, 252.582703, true)]
+    [InlineData(true, 252.582704, true)]
+    [InlineData(true, 252.582705, false)]
+    [InlineData(false, 0, true, true)]
+    [InlineData(true, 0, true, true)]
+    public async Task PricedTransfer_UsesInclusiveMinimum(bool token, double minimum, bool shouldSend, bool zeroPrice = false)
+    {
+        await using var fixture = new WalletTrackerWorkerFixture(
+            new FakeAssetPriceProvider(zeroPrice), minimumUsdValue: (decimal)minimum);
+        using var worker = fixture.CreateWorker();
+        await worker.StartAsync(CancellationToken.None);
+        await fixture.Channels.RawBlockDataChannel.Writer.WriteAsync(FilterTestBlock(token));
+        fixture.Channels.RawBlockDataChannel.Writer.Complete();
+        await worker.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(shouldSend, fixture.Channels.NotificationPayloadChannel.Reader.TryRead(out var payload));
+        if (shouldSend)
+            Assert.Equal(zeroPrice ? 0m : token ? 252.582704m : 5m, payload!.UsdValue);
+        Assert.False(fixture.Channels.NotificationPayloadChannel.Reader.TryRead(out _));
+    }
+
+    private static RawBlockData FilterTestBlock(bool token)
+        => new(SupportedChain.Bsc, 110, "0xfilter-block", DateTimeOffset.UtcNow,
+            token ? [] : [new RawTransactionData("0xfilter-native", "0x1111111111111111111111111111111111111111", TrackedAddress, 2.5m)],
+            token ? [TokenTransferLog("0xfilter-token", "0x1111111111111111111111111111111111111111", TrackedAddress)] : []);
+
     private sealed class WalletTrackerWorkerFixture : IAsyncDisposable
     {
         private readonly CancellationTokenSource _timeout = new(TimeSpan.FromSeconds(5));
@@ -340,19 +415,20 @@ public sealed class WalletTrackerWorkerTests
         public WalletTrackerWorkerFixture(
             IAssetPriceProvider? priceProvider = null,
             bool trackTokenTransfers = true,
-            SupportedChain[]? enabledChains = null)
+            SupportedChain[]? enabledChains = null,
+            decimal minimumUsdValue = 1m)
         {
             Channels = new OnChainPipelineChannels();
             _priceProvider = priceProvider ?? new FakeAssetPriceProvider();
 
-            var trackedWallet = CreateTrackedWallet(trackTokenTransfers, enabledChains);
+            var trackedWallet = CreateTrackedWallet(trackTokenTransfers, enabledChains, minimumUsdValue);
             Cache = new InMemoryCacheService();
             Cache.Add(trackedWallet);
         }
 
         public OnChainPipelineChannels Channels { get; }
 
-        private InMemoryCacheService Cache { get; }
+        public InMemoryCacheService Cache { get; }
 
         public WalletTrackerWorker CreateWorker()
             => new(
@@ -395,12 +471,12 @@ public sealed class WalletTrackerWorkerTests
             return ValueTask.CompletedTask;
         }
 
-        private static TrackedWallet CreateTrackedWallet(bool trackTokenTransfers, SupportedChain[]? enabledChains)
+        private static TrackedWallet CreateTrackedWallet(bool trackTokenTransfers, SupportedChain[]? enabledChains, decimal minimumUsdValue)
         {
             var result = TrackedWallet.Create(
                 TrackedAddress,
                 7777,
-                minimumUsdValue: 1m,
+                minimumUsdValue: minimumUsdValue,
                 trackTokenTransfers: trackTokenTransfers,
                 alias: "debabki.eth",
                 enabledChains: enabledChains ?? [SupportedChain.Bsc]);
@@ -437,7 +513,7 @@ public sealed class WalletTrackerWorkerTests
                 new TokenMetadata(chain, tokenContractAddress, "USDT", "Tether USD", 6)));
     }
 
-    private sealed class FakeAssetPriceProvider : IAssetPriceProvider
+    private sealed class FakeAssetPriceProvider(bool zeroPrice = false) : IAssetPriceProvider
     {
         public Task<Result<AssetUsdPrice>> GetUsdPriceAsync(
             SupportedChain chain,
@@ -445,7 +521,7 @@ public sealed class WalletTrackerWorkerTests
             string assetSymbol,
             CancellationToken cancellationToken)
         {
-            var price = string.IsNullOrWhiteSpace(tokenContractAddress) ? 2m : 1m;
+            var price = zeroPrice ? 0m : string.IsNullOrWhiteSpace(tokenContractAddress) ? 2m : 1m;
             return Task.FromResult(Result<AssetUsdPrice>.Success(
                 new AssetUsdPrice(price, DateTimeOffset.UtcNow, "Test")));
         }

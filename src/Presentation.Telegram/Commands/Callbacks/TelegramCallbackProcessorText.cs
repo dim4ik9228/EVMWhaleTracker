@@ -7,7 +7,7 @@ internal static class TelegramCallbackProcessorText
     public const string PrivateChatRequired = "Please open this bot in a private chat to manage tracked wallets.";
     public const string WalletNotFound = "Wallet not found.";
     public const string LastNetworkRequired = "At least one network must remain enabled.";
-    public const string MinimumUsdPrompt = "Send the minimum transaction USD value.\nUse 0 to notify on every matched transaction.";
+    public const string MinimumUsdPrompt = "Send the minimum transaction USD value.\nA positive minimum skips transfers without a USD price. Use 0 to notify on every matched transaction, including unpriced transfers.";
     public const string PolymarketMenuStale = "This setting changed. Refresh the Polymarket menu.";
     public const string VerifiedAccountMissing = "No verified trading account is available.";
     public const string PolymarketMinimumPrompt = "Send the Polymarket minimum gross trade value in collateral units (pUSD / USDC.e). Default: 0. Redemptions bypass this minimum.";
