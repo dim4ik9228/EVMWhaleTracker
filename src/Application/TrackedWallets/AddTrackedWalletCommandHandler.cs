@@ -1,4 +1,5 @@
 using Application.Abstractions;
+using Application.Billing;
 using Domain.Common;
 using Domain.Entities;
 using Domain.ValueObjects;
@@ -11,7 +12,7 @@ namespace Application.TrackedWallets;
 /// </summary>
 public sealed class AddTrackedWalletCommandHandler(
     ITrackedWalletRepository trackedWalletRepository,
-    ITrackedWalletCacheService trackedWalletCache)
+    ITrackedWalletCacheService trackedWalletCache, IBillingService? billing = null)
     : IRequestHandler<AddTrackedWalletCommand, Result<TrackedWalletDetails>>
 {
     public async Task<Result<TrackedWalletDetails>> Handle(AddTrackedWalletCommand request, CancellationToken cancellationToken)
@@ -47,6 +48,12 @@ public sealed class AddTrackedWalletCommandHandler(
         if (createResult.IsFailure)
         {
             return Result<TrackedWalletDetails>.Failure(createResult.Error);
+        }
+
+        if (billing is not null)
+        {
+            var admission = await billing.AddWalletAsync(createResult.Value, cancellationToken);
+            return admission.IsFailure ? Result<TrackedWalletDetails>.Failure(admission.Error) : Result<TrackedWalletDetails>.Success(TrackedWalletDetails.FromEntity(createResult.Value));
         }
 
         await trackedWalletRepository.AddAsync(createResult.Value, cancellationToken);

@@ -1,3 +1,4 @@
+using Application.Billing;
 using Domain.Common;
 using System.Text.Json;
 using Application.Polymarket;
@@ -26,6 +27,8 @@ public sealed class PolymarketDeliveryWorker(IServiceScopeFactory scopes, IOptio
             try
             {
                 using var scope = scopes.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var entitlement = scope.ServiceProvider.GetService<IEntitlementPolicy>();
+        var recipientAccess = scope.ServiceProvider.GetService<IRecipientAccess>();
                 var now = DateTimeOffset.UtcNow;
                 var due = db.Set<PolymarketDelivery>().Where(x => x.State == RuntimeStates.Delivery.Pending && x.DueAt <= now).Select(x => x.UserId).Distinct();
                 var users = await due.Where(x => x > _lastUser).OrderBy(x => x).Take(4).ToArrayAsync(ct);
@@ -41,6 +44,8 @@ public sealed class PolymarketDeliveryWorker(IServiceScopeFactory scopes, IOptio
     private async Task SendAsync(long user, CancellationToken ct)
     {
         using var scope = scopes.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var entitlement = scope.ServiceProvider.GetService<IEntitlementPolicy>();
+        var recipientAccess = scope.ServiceProvider.GetService<IRecipientAccess>();
         await db.Database.OpenConnectionAsync(ct);
         var connection = (NpgsqlConnection)db.Database.GetDbConnection();
         await using var acquire = new NpgsqlCommand("SELECT pg_try_advisory_lock(7422, @key)", connection);
@@ -57,10 +62,11 @@ public sealed class PolymarketDeliveryWorker(IServiceScopeFactory scopes, IOptio
             async Task<bool> Eligible(CancellationToken token)
             {
                 if (!options.Value.Enabled || !polygon.Value.Enabled) return false;
+                if (recipientAccess is not null && !await recipientAccess.AllowsAsync(user, delivery.WalletId, TrackingMode.Polymarket, null, null, token)) return false;
                 var setting = await db.Set<PolymarketSetting>().AsNoTracking().SingleOrDefaultAsync(x => x.WalletId == delivery.WalletId, token);
                 var wallet = await db.TrackedWallets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == delivery.WalletId && x.UserId == user, token);
                 var canonical = await db.Set<PolymarketEvent>().AsNoTracking().AnyAsync(x => x.Id == source.Id && x.Canonical, token);
-                return wallet is not null && canonical && setting?.Enabled == true && !setting.NeedsAttention
+                return entitlement?.Allows(delivery.WalletId, TrackingMode.Polymarket) != false && wallet is not null && canonical && setting?.Enabled == true && !setting.BillingPaused && !setting.NeedsAttention
                     && setting.Generation == delivery.Generation && setting.SourceAddress == source.SourceAddress
                     && (activity.Action == PolymarketTokens.Actions.Correction || setting.ActivationBlock < source.BlockNumber)
                     && (activity.Action is PolymarketTokens.Actions.Redeem or PolymarketTokens.Actions.Correction || activity.CashValue is { } cash && cash >= setting.MinimumTradeValue);

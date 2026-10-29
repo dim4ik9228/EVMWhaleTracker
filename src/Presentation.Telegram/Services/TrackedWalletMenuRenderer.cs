@@ -1,7 +1,9 @@
+using Presentation.Telegram.Billing;
 using Presentation.Telegram.Commands;
 using System.Globalization;
 using System.Net;
 using Application.Abstractions;
+using Application.Billing;
 using Application.TrackedWallets;
 using Domain.Common;
 using Telegram.Bot.Types.Enums;
@@ -12,7 +14,7 @@ namespace Presentation.Telegram.Services;
 /// <summary>
 /// Builds Telegram HTML menus for editing tracked-wallet settings.
 /// </summary>
-public sealed class TrackedWalletMenuRenderer : ITrackedWalletMenuRenderer
+public sealed class TrackedWalletMenuRenderer(IEntitlementPolicy? entitlement = null) : ITrackedWalletMenuRenderer
 {
     /// <summary>
     /// Builds the wallet overview menu with actions for thresholds, networks, rename, and deletion.
@@ -27,6 +29,7 @@ public sealed class TrackedWalletMenuRenderer : ITrackedWalletMenuRenderer
         var displayName = string.IsNullOrWhiteSpace(wallet.Alias) ? TrackedWalletMenuRendererText.Main : wallet.Alias;
         var text =
             TrackedWalletMenuRendererText.Overview(HtmlEncode(displayName), HtmlEncode(FormatEnabledChains(wallet, configuredChains)), HtmlEncode(wallet.Address), wallet.MinimumUsdValue.ToString("0.##", CultureInfo.InvariantCulture));
+        if (entitlement?.EnforcementEnabled == true && !entitlement.Allows(wallet.Id, TrackingMode.Evm)) text += "\n" + BillingText.EvmPaused;
 
         var walletId = wallet.Id.ToString("N");
         var keyboard = new InlineKeyboardMarkup(
@@ -36,6 +39,7 @@ public sealed class TrackedWalletMenuRenderer : ITrackedWalletMenuRenderer
                 InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Networks, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Networks}:{walletId}")
             ],
             [InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Hyperliquid, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Hyperliquid}:{walletId}"), InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Polymarket, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Predictions}:{walletId}")],
+            [InlineKeyboardButton.WithCallbackData(BillingText.Back, BillingUiTokens.Open)],
             [InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Rename, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Rename}:{walletId}")],
             [InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Delete, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Delete}:{walletId}")],
             [InlineKeyboardButton.WithCallbackData(TrackedWalletMenuRendererText.Back, $"{TelegramInteractionTokens.Callbacks.Wallet}:{TelegramInteractionTokens.Callbacks.Version}:{TelegramInteractionTokens.Callbacks.Close}:{walletId}")]

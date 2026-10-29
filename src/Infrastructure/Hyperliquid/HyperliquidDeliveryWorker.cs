@@ -1,3 +1,4 @@
+using Application.Billing;
 using Domain.Common;
 using System.Text.Json;
 using Application.Hyperliquid;
@@ -27,6 +28,8 @@ public sealed class HyperliquidDeliveryWorker(IServiceScopeFactory scopes, IOpti
             {
                 using var scope = scopes.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var entitlement = scope.ServiceProvider.GetService<IEntitlementPolicy>();
+        var recipientAccess = scope.ServiceProvider.GetService<IRecipientAccess>();
                 var now = DateTimeOffset.UtcNow;
                 if (++healthTick % 240 == 0)
                     logger.LogInformation(HyperliquidDeliveryWorkerDiagnostics.HyperliquidOutboxBacklogFailures,
@@ -50,6 +53,8 @@ public sealed class HyperliquidDeliveryWorker(IServiceScopeFactory scopes, IOpti
     {
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var entitlement = scope.ServiceProvider.GetService<IEntitlementPolicy>();
+        var recipientAccess = scope.ServiceProvider.GetService<IRecipientAccess>();
         await db.Database.OpenConnectionAsync(ct);
         var connection = (NpgsqlConnection)db.Database.GetDbConnection();
         // Separate namespace from ingestion/admission. Shared by delivery hosts, per recipient.
@@ -65,7 +70,7 @@ public sealed class HyperliquidDeliveryWorker(IServiceScopeFactory scopes, IOpti
             var first = pending[0];
             var setting = await db.Set<HyperliquidSetting>().AsNoTracking().SingleOrDefaultAsync(x => x.WalletId == first.WalletId, ct);
             var wallet = await db.TrackedWallets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == first.WalletId && x.UserId == userId, ct);
-            if (setting?.Enabled != true || setting.Generation != first.Generation || wallet is null)
+            if (setting?.Enabled != true || setting.BillingPaused || entitlement?.Allows(first.WalletId, TrackingMode.Hyperliquid) == false || setting.Generation != first.Generation || wallet is null)
             { first.State = RuntimeStates.Delivery.Cancelled; await db.SaveChangesAsync(ct); return; }
             var events = await db.Set<HyperliquidEvent>().Where(x => pending.Select(d => d.EventId).Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
             var activity = JsonSerializer.Deserialize<HyperliquidActivity>(events[first.EventId].Payload)!;
@@ -86,13 +91,14 @@ public sealed class HyperliquidDeliveryWorker(IServiceScopeFactory scopes, IOpti
                 && (a.Usd is null || a.Usd >= wallet.MinimumUsdValue)).ToList();
             if (eligible.Count == 0) { foreach (var d in selected) d.State = RuntimeStates.Delivery.Cancelled; await db.SaveChangesAsync(ct); return; }
             var fresh = await db.Set<HyperliquidSetting>().AsNoTracking().SingleOrDefaultAsync(x => x.WalletId == wallet.Id, ct);
-            if (fresh?.Enabled != true || fresh.Generation != first.Generation) return;
+            if (fresh?.Enabled != true || fresh.BillingPaused || fresh.Generation != first.Generation) return;
             var success = false;
             try { success = await sender.SendAsync(userId, new HyperliquidNotification(wallet.Id, wallet.Alias ?? wallet.Address.Value, wallet.Address.Value, eligible), async token =>
                 {
                     var current = await db.Set<HyperliquidSetting>().AsNoTracking().SingleOrDefaultAsync(x => x.WalletId == wallet.Id, token);
                     var currentWallet = await db.TrackedWallets.AsNoTracking().SingleOrDefaultAsync(x => x.Id == wallet.Id && x.UserId == userId, token);
-                    return current?.Enabled == true && current.Generation == first.Generation
+                    if (recipientAccess is not null && !await recipientAccess.AllowsAsync(userId, wallet.Id, TrackingMode.Hyperliquid, null, null, token)) return false;
+                    return entitlement?.Allows(wallet.Id, TrackingMode.Hyperliquid) != false && current?.Enabled == true && !current.BillingPaused && current.Generation == first.Generation
                         && currentWallet is not null && eligible.All(a => a.Usd is null || a.Usd >= currentWallet.MinimumUsdValue);
                 }, ct); }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }

@@ -1,0 +1,35 @@
+# Manual Pro administration
+
+- Status: completed
+- Date: 2026-10-28
+- Summary: add a private Telegram admin panel for issuing and revoking audited, expiring Pro grants using the existing access ledger.
+
+## Scope and decisions
+
+The user requests manual Pro assignment for testing and ordinary operations, and explicitly selected the Telegram account currently used for bot testing as the first admin. Implement this feature, rather than stopping at a proposal. Use a private `/admin` panel; no separate website or public admin HTTP endpoint is needed. Reuse the existing numeric operator allowlist and PostgreSQL grant/audit records. Do not enable sales or global paywall enforcement as part of this change.
+
+The panel provides My account and numeric-user lookup, a concise user/access view, Grant Pro, and paginated manual-grant history with revoke actions. Accept only positive numeric Telegram IDs; target users must already be known through persisted billing/tracking state. Show the verified target ID and current subscription before a mutation. Do not grant by username or inferred wallet alias. Add an Admin entry in the private subscription menu only for configured operators. Private `/myid` returns only the sender's numeric ID and is available to ordinary users. Ordinary users must never receive admin user lists or another user's subscription data.
+
+Offer short test and normal durations (1 hour, 1 day, 7 days, 30 days, 90 days) plus custom whole days within 1–365. The shared service accepts whole hours within 1–8760, while the existing expert command retains its 1–720-hour input range. No permanent grants. Manual additions extend contiguous existing paid/manual access, starting now if none is active; disconnected future periods retain their dates. Require a nonempty bounded reason, then show target, reason and UTC start/end in a confirmation preview. Cancelling or browsing must not change the ledger. Confirmations expire, bind actor/target/action and are revalidated at mutation time; changed target subscriptions require a fresh preview.
+
+Every confirmed grant/revoke is owner-serialized, authorized again in the administration service, and recorded transactionally with actor, target, reason, duration/reference and a durable operation identity. Retried or double-clicked confirmations cannot grant twice. Access grants remain separate from payment receipts/orders; do not fabricate payment records. Refresh committed entitlement projections through the existing lifecycle. A committed operation must remain recoverable if notice/projection work fails afterward.
+
+Revoke only manual/operator grants through this panel. A revoke preview identifies the exact grant and asks for an audit reason/confirmation. Never revoke or modify purchased grants or issue a refund through this flow. Remaining purchased/manual periods continue to determine effective access. Existing expert `/billing_*` commands remain compatible; use shared administration primitives where practical without expanding refund behavior.
+
+Use application ports/DTOs/errors for admin use cases and infrastructure persistence/authorization adapters. Keep Telegram state/presentation in Presentation, named copy/callbacks in their catalogs, HTML escaping, private-chat checks, bounded in-memory wizard state with TTL and bounded paginated reads. Restart/lost state must yield an expired-action response, not silently create a fresh mutation. Preserve other pending wallet-edit flows; support cancellation and prevent admin replies from being consumed as wallet edits. Callback identifiers must fit Telegram limits.
+
+## Validation and delivery
+
+Use a sole first writer, a fresh integration pass and independent review under the repository workflow. Prove unauthorized/group requests fail, known-target validation, cancel/expiry/stale confirmation behavior, concurrent replay idempotency, grant extension, manual-only revocation preserving purchased periods, durable audit and post-commit projection behavior. Use disposable PostgreSQL for transaction/concurrency checks; generate any unavoidable migration through EF tooling and run the full suite afterward. Prefer existing tables so a migration is unnecessary.
+
+Configure the explicitly selected test account as an operator using private evidence, preserve existing allowlist entries and keep local configuration/secrets consistent. Deploy the reviewed addition as continuation of the current bot work. Read-only live `/admin` navigation may verify availability for that account, but do not issue/revoke a real user's Pro period, spend funds or change tracking preferences automatically. Record operator bootstrap/deployment/check evidence privately; public docs contain no real Telegram IDs.
+
+## Completion and evidence
+
+Implemented the application administration port/DTO/error catalog, PostgreSQL owner-serialized ledger operations and private Telegram wizard. Existing tables suffice; no migration was added. The existing expert revoke command retains its explicit purchased-grant reversal capability, while the panel exposes only manual grants. Preview records an observation timestamp; confirmation rejects crossed grant start/end boundaries even before the projection revision advances. A committed replay can still recover projection work without issuing another period.
+
+First implementation, fresh integration and independent review completed. Review identified the time-boundary stale-preview defect, which was fixed, covered by PostgreSQL regression tests and independently rechecked. Final focused command: `dotnet test test/UnitTests/UnitTests.csproj --filter "FullyQualifiedName~Billing|FullyQualifiedName~Subscription" --no-restore --logger "console;verbosity=minimal"`, with only the disposable BillingQa connection configured: **56 passed, zero failed, four unrelated Hyperliquid environment-gated skips**. All selected admin database/UI checks executed. Existing dependency advisory warnings remain. `git diff --check` passed with existing CRLF conversion warnings.
+
+Deployed locally on 2026-10-28 and verified the selected test account's `/admin`, My account, duration choices, cancellation, private `/myid`, subscription Admin entry and Find user prompt. HTTP billing health returned zero inbox/review/notice/expired backlog; container restart count was zero and observed logs had no failure markers. Exact original wallet/protocol settings and zero grant/audit/order/receipt counts were preserved. Sales and enforcement remain false. The disposable QA container was stopped after validation. Private evidence is under Git-ignored `artifacts/live-validation/pro-admin-20261028-161253/`.
+
+Live grant/revoke confirmation, live multi-account/group privacy and real financial flows were not executed. Transactional grants/revocations, concurrency/replay, stale/expired previews, authorization and projection recovery were checked with disposable PostgreSQL/UI tests. Operations instructions and manually invoked BILL-07 navigation case document future use.

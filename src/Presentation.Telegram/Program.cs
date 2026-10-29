@@ -1,3 +1,11 @@
+using Application.Billing;
+using Infrastructure.Billing;
+using Presentation.Telegram.Billing;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Domain.Entities;
+using System.Security.Cryptography;
+using System.Text;
 using Application.Polymarket;
 using Infrastructure.Polymarket;
 using Application.Messaging;
@@ -31,7 +39,7 @@ using Presentation.Telegram.Services;
 using Presentation.Telegram.Workers;
 using Telegram.Bot;
 
-var builder = Host.CreateApplicationBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddUserSecrets<Program>(optional: true, reloadOnChange: true);
 
@@ -66,6 +74,23 @@ if (string.IsNullOrWhiteSpace(connectionString))
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddScoped<ITrackedWalletRepository, TrackedWalletRepository>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddOptions<BillingOptions>().Bind(builder.Configuration.GetSection("Billing"))
+    .Validate(o => o.IsValid(), BillingDiagnostics.InvalidOptions).ValidateOnStart();
+builder.Services.AddSingleton<IRecipientAccess, RecipientAccess>();
+builder.Services.AddSingleton<EntitlementPolicy>();
+builder.Services.AddSingleton<IEntitlementPolicy>(sp => sp.GetRequiredService<EntitlementPolicy>());
+builder.Services.AddScoped<BillingService>();
+builder.Services.AddScoped<IBillingService>(sp => sp.GetRequiredService<BillingService>());
+builder.Services.AddHttpClient<NowPaymentsClient>(client => { client.BaseAddress = new Uri("https://api.nowpayments.io/v1/"); client.Timeout = TimeSpan.FromSeconds(15); })
+    .RemoveAllLoggers().ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddScoped<TelegramBilling>();
+builder.Services.AddScoped<IBillingAdministration, BillingAdministration>();
+builder.Services.AddSingleton<AdminWizardStore>();
+builder.Services.AddScoped<TelegramBillingAdmin>();
+builder.Services.AddHostedService<BillingWorker>();
+builder.Services.AddHostedService<BillingProjectionWorker>();
+
 builder.Services.AddOptions<PolymarketOptions>().Bind(builder.Configuration.GetSection(HostConfiguration.Polymarket))
     .Validate(o => o.IsValidForStartup(), HostDiagnostics.InvalidPolymarketOptions).ValidateOnStart();
 builder.Services.AddHttpClient(HostConfiguration.Polymarket, client => client.Timeout = Timeout.InfiniteTimeSpan)
@@ -103,6 +128,7 @@ builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssemblyContaining<AssemblyReference>();
     cfg.AddOpenBehavior(typeof(RequestLoggingPipelineBehavior<,>));
+    cfg.AddOpenBehavior(typeof(BillingMutationBehavior<,>));
 });
 
 builder.Services.AddMemoryCache();
@@ -197,4 +223,44 @@ if (args.Length > 0 && string.Equals(args[0], HostConfiguration.ImportAddressLab
     return;
 }
 
+app.MapPost("/billing/nowpayments/ipn", async (HttpRequest request, AppDbContext db,
+    Microsoft.Extensions.Options.IOptions<BillingOptions> billingOptions, CancellationToken ct) =>
+{
+    const int maximum = 65536;
+    if (request.ContentLength > maximum) return Results.StatusCode(413);
+    using var buffer = new MemoryStream(); var chunk = new byte[4096];
+    int count;
+    while ((count = await request.Body.ReadAsync(chunk, ct)) > 0)
+    { if (buffer.Length + count > maximum) return Results.StatusCode(413); buffer.Write(chunk, 0, count); }
+    var body = Encoding.UTF8.GetString(buffer.ToArray());
+    if (!NowPaymentsSignature.Verify(body, request.Headers["x-nowpayments-sig"].ToString(), billingOptions.Value.NowPaymentsIpnSecret)) return Results.Unauthorized();
+    var key = BillingKeys.Ipn(Convert.ToHexString(SHA256.HashData(buffer.ToArray())));
+    await using var tx = await db.Database.BeginTransactionAsync(ct);
+    await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(74230001)", ct);
+    if (!await db.Set<PaymentReceipt>().AnyAsync(x => x.Provider == BillingPlans.CryptoProvider && x.EventKey == key, ct))
+    {
+        using var json = System.Text.Json.JsonDocument.Parse(body);
+        var hasPayment = json.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object && json.RootElement.TryGetProperty("payment_id", out var paymentId)
+            && paymentId.ValueKind is System.Text.Json.JsonValueKind.String or System.Text.Json.JsonValueKind.Number;
+        db.Add(new PaymentReceipt { Id = Guid.NewGuid(), Provider = BillingPlans.CryptoProvider, EventKey = key,
+            ChargeId = hasPayment ? json.RootElement.GetProperty("payment_id").ToString() : "", Evidence = body,
+            State = hasPayment ? BillingStates.Inbox : BillingStates.Review, ReceivedAt = DateTimeOffset.UtcNow });
+        await db.SaveChangesAsync(ct);
+    }
+    await tx.CommitAsync(ct); return Results.Ok();
+});
+app.MapGet("/health/billing", async (AppDbContext db, CancellationToken ct) =>
+{
+    var now = DateTimeOffset.UtcNow;
+    return Results.Ok(new {
+        unresolvedIdentities = await db.Set<PaymentAttempt>().CountAsync(x => x.Provider == BillingPlans.CryptoProvider && x.InvoiceId != null && x.ExternalId == null && x.State != BillingStates.Settled && x.State != BillingStates.Reversed, ct),
+        oldestUnresolvedIdentitySeconds = (now - (await db.Set<PaymentAttempt>().Where(x => x.Provider == BillingPlans.CryptoProvider && x.InvoiceId != null && x.ExternalId == null && x.State != BillingStates.Settled && x.State != BillingStates.Reversed).Select(x => (DateTimeOffset?)x.CreatedAt).MinAsync(ct)))?.TotalSeconds,
+        ambiguousCreations = await db.Set<PaymentAttempt>().CountAsync(x => x.Provider == BillingPlans.CryptoProvider && x.State == BillingStates.CreationUnknown && x.InvoiceId == null, ct),
+        oldestAmbiguousCreationSeconds = (now - (await db.Set<PaymentAttempt>().Where(x => x.Provider == BillingPlans.CryptoProvider && x.State == BillingStates.CreationUnknown && x.InvoiceId == null).Select(x => (DateTimeOffset?)x.CreatedAt).MinAsync(ct)))?.TotalSeconds,
+        inbox = await db.Set<PaymentReceipt>().CountAsync(x => x.State == BillingStates.Inbox || x.State == BillingStates.AwaitingProvider, ct),
+        review = await db.Set<PaymentReceipt>().CountAsync(x => x.State == BillingStates.Review || x.State == BillingStates.DuplicatePayment, ct),
+        notices = await db.Set<BillingOutbox>().CountAsync(x => x.SentAt == null, ct),
+        expired = await db.Set<BillingAccount>().CountAsync(x => x.WasPro && !db.Set<AccessGrant>().Any(g => g.UserId == x.UserId && g.ReversedAt == null && g.StartsAt <= now && g.EndsAt > now), ct)
+    });
+});
 await app.RunAsync();

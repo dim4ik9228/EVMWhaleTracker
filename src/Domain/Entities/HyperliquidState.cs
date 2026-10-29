@@ -6,6 +6,8 @@ public sealed class HyperliquidSetting
 {
     public Guid WalletId { get; set; }
     public bool Enabled { get; set; }
+    public bool BillingPaused { get; set; }
+    public string? BillingPauseReason { get; set; }
     public Guid Generation { get; set; }
     public DateTimeOffset ActivatedAt { get; set; }
 }

@@ -1,3 +1,4 @@
+using Application.Billing;
 using Domain.Common;
 using System.Text.Json;
 using Application.Polymarket;
@@ -10,11 +11,11 @@ namespace Infrastructure.Polymarket;
 
 /// <summary>Transactional raw inbox, canonical normalization, and recipient outbox. Coverage advances only after all filters persist.</summary>
 public sealed class PolymarketPolygonStore(AppDbContext db, IPolymarketPolygonRpc rpc,
-    IPolymarketMarketResolver markets, IOptions<PolymarketPolygonOptions> options, PolymarketPolygonHealth health)
+    IPolymarketMarketResolver markets, IOptions<PolymarketPolygonOptions> options, PolymarketPolygonHealth health, IEntitlementPolicy? entitlement = null)
 {
-    public async Task<string[]> SourcesAsync(CancellationToken ct) => await (from s in db.Set<PolymarketSetting>()
-        join w in db.TrackedWallets on s.WalletId equals w.Id where s.Enabled && !s.NeedsAttention && s.SourceAddress != null
-        select s.SourceAddress!).Distinct().OrderBy(x => x).ToArrayAsync(ct);
+    public async Task<string[]> SourcesAsync(CancellationToken ct) => (await (from s in db.Set<PolymarketSetting>()
+        join w in db.TrackedWallets on s.WalletId equals w.Id where s.Enabled && !s.BillingPaused && !s.NeedsAttention && s.SourceAddress != null
+        select new { w.Id, Source = s.SourceAddress! }).ToListAsync(ct)).Where(x => entitlement?.Allows(x.Id, TrackingMode.Polymarket) != false).Select(x => x.Source).Distinct().OrderBy(x => x).ToArray();
 
     public async Task PersistAsync(IEnumerable<PolymarketChainLog> logs, CancellationToken ct)
     {
@@ -51,7 +52,7 @@ public sealed class PolymarketPolygonStore(AppDbContext db, IPolymarketPolygonRp
         foreach (var source in sources)
         {
             var checkpoint = await db.Set<PolymarketCheckpoint>().FindAsync([source], ct);
-            var start = await db.Set<PolymarketSetting>().Where(x => x.Enabled && x.SourceAddress == source)
+            var start = await db.Set<PolymarketSetting>().Where(x => x.Enabled && !x.BillingPaused && x.SourceAddress == source)
                 .MinAsync(x => x.ActivationBlock, ct) ?? head;
             if (checkpoint is null)
             {
@@ -219,9 +220,9 @@ public sealed class PolymarketPolygonStore(AppDbContext db, IPolymarketPolygonRp
                     Payload = JsonSerializer.Serialize(activity), StoredAt = DateTimeOffset.UtcNow, BlockNumber = raw.BlockNumber,
                     BlockHash = raw.BlockHash, RawLogId = raw.Id, DecoderVersion = PolymarketContractRegistry.Version });
                 var recipients = await (from s in db.Set<PolymarketSetting>() join w in db.TrackedWallets on s.WalletId equals w.Id
-                    where s.Enabled && !s.NeedsAttention && s.SourceAddress == activity.SourceAddress && s.ActivationBlock < raw.BlockNumber
+                    where s.Enabled && !s.BillingPaused && !s.NeedsAttention && s.SourceAddress == activity.SourceAddress && s.ActivationBlock < raw.BlockNumber
                     select new { Setting = s, w.UserId }).ToListAsync(ct);
-                foreach (var recipient in recipients)
+                foreach (var recipient in recipients.Where(x => entitlement?.Allows(x.Setting.WalletId, TrackingMode.Polymarket) != false))
                     if (activity.Action == PolymarketTokens.Actions.Redeem || activity.CashValue is { } cash && cash >= recipient.Setting.MinimumTradeValue)
                         db.Add(new PolymarketDelivery { Id = Guid.NewGuid(), EventId = activity.Id, WalletId = recipient.Setting.WalletId,
                             Generation = recipient.Setting.Generation, UserId = recipient.UserId, DueAt = DateTimeOffset.UtcNow });
@@ -347,7 +348,7 @@ public sealed class PolymarketPolygonStore(AppDbContext db, IPolymarketPolygonRp
         foreach (var d in pending)
         {
             var s = await db.Set<PolymarketSetting>().AsNoTracking().SingleOrDefaultAsync(x => x.WalletId == d.WalletId, ct);
-            if (s?.Enabled == true && !s.NeedsAttention && s.Generation == d.Generation && s.SourceAddress == original.SourceAddress
+            if (s?.Enabled == true && !s.BillingPaused && !s.NeedsAttention && s.Generation == d.Generation && s.SourceAddress == original.SourceAddress
                 && s.ActivationBlock < original.BlockNumber && (decoded.Action == PolymarketTokens.Actions.Redeem || decoded.CashValue >= s.MinimumTradeValue))
             { d.State = RuntimeStates.Delivery.Pending; d.Attempts = 0; d.DueAt = DateTimeOffset.UtcNow; }
         }

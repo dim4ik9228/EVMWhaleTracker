@@ -254,7 +254,7 @@ public sealed class HyperliquidWorker(IServiceScopeFactory scopes, IHyperliquidS
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var store = scope.ServiceProvider.GetRequiredService<HyperliquidStore>();
             var checkpoint = await db.Set<HyperliquidCheckpoint>().AsNoTracking().SingleOrDefaultAsync(x => x.Key == address + "|" + stream, ct);
-            var earliest = await (from s in db.Set<HyperliquidSetting>() join w in db.TrackedWallets on s.WalletId equals w.Id where s.Enabled select new { s.ActivatedAt, w.Address }).ToListAsync(ct);
+            var earliest = await (from s in db.Set<HyperliquidSetting>() join w in db.TrackedWallets on s.WalletId equals w.Id where s.Enabled && !s.BillingPaused select new { s.ActivatedAt, w.Address }).ToListAsync(ct);
             var activation = earliest.Where(x => x.Address.Value.Equals(address, StringComparison.OrdinalIgnoreCase)).Min(x => x.ActivatedAt.ToUnixTimeMilliseconds());
             var requested = checkpoint?.Time > 0 ? checkpoint.Time : activation;
             var lower = DateTimeOffset.UtcNow.AddHours(-Options.RecoveryHours).ToUnixTimeMilliseconds();

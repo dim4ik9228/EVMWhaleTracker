@@ -151,7 +151,7 @@ public sealed class WalletTrackerWorker : BackgroundService
                 Amount: transaction.Value,
                 UsdValue: usdValue.Value,
                 BlockNumber: block.BlockNumber,
-                BlockTimestampUtc: block.BlockTimestampUtc);
+                BlockTimestampUtc: block.BlockTimestampUtc, EntitlementRevision: entry.EntitlementRevision, EntitlementValidUntil: entry.EntitlementValidUntil);
 
             await _channels.NotificationPayloadChannel.Writer.WriteAsync(payload, cancellationToken);
         }
@@ -271,7 +271,7 @@ public sealed class WalletTrackerWorker : BackgroundService
                 Amount: amount,
                 UsdValue: usdValue.Value,
                 BlockNumber: block.BlockNumber,
-                BlockTimestampUtc: block.BlockTimestampUtc);
+                BlockTimestampUtc: block.BlockTimestampUtc, EntitlementRevision: entry.EntitlementRevision, EntitlementValidUntil: entry.EntitlementValidUntil);
 
             await _channels.NotificationPayloadChannel.Writer.WriteAsync(payload, cancellationToken);
         }

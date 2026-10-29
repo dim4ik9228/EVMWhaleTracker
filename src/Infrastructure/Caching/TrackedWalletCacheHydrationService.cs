@@ -1,3 +1,4 @@
+using Application.Billing;
 using Application.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -34,6 +35,8 @@ public sealed class TrackedWalletCacheHydrationService : IHostedService
         var cache = scope.ServiceProvider.GetRequiredService<ITrackedWalletCacheService>();
 
         var trackedWallets = await repository.ListAllAsync(cancellationToken);
+        var billing = scope.ServiceProvider.GetService<IBillingService>();
+        if (billing is not null) foreach (var owner in trackedWallets.Select(x => x.UserId).Distinct()) await billing.RefreshAsync(owner, cancellationToken);
         cache.ReplaceAll(trackedWallets);
 
         _logger.LogInformation(TrackedWalletCacheHydrationServiceDiagnostics.HydratedTrackedWalletCacheWithWallets, trackedWallets.Count);

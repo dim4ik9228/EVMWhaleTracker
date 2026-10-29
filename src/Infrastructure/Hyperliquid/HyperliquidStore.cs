@@ -1,3 +1,4 @@
+using Application.Billing;
 using Domain.Common;
 using System.Text.Json;
 using Application.Hyperliquid;
@@ -9,11 +10,12 @@ using Microsoft.Extensions.Options;
 namespace Infrastructure.Hyperliquid;
 
 /// <summary>Atomic source deduplication, fan-out and checkpoint persistence under the single ingestion lease.</summary>
-public sealed class HyperliquidStore(AppDbContext db, HyperliquidChangeSignal? signal = null, IOptions<HyperliquidOptions>? options = null)
+public sealed class HyperliquidStore(AppDbContext db, HyperliquidChangeSignal? signal = null, IOptions<HyperliquidOptions>? options = null, IEntitlementPolicy? entitlement = null)
 {
     private static readonly SemaphoreSlim AcceptGate = new(1);
     public async Task<List<string>> AddressesAsync(CancellationToken ct) => (await (from s in db.Set<HyperliquidSetting>()
-        join w in db.TrackedWallets on s.WalletId equals w.Id where s.Enabled select w.Address).ToListAsync(ct))
+        join w in db.TrackedWallets on s.WalletId equals w.Id where s.Enabled && !s.BillingPaused select w).ToListAsync(ct))
+        .Where(w => entitlement?.Allows(w.Id, TrackingMode.Hyperliquid) != false).Select(w => w.Address)
         .Select(a => a.Value.ToLowerInvariant()).Distinct().Order().ToList();
 
     public async Task AcceptAsync(HyperliquidActivity activity, bool baseline, CancellationToken ct)
@@ -26,10 +28,10 @@ public sealed class HyperliquidStore(AppDbContext db, HyperliquidChangeSignal? s
         db.Add(new HyperliquidEvent { Id = activity.Id, Address = activity.Address, Stream = activity.Stream,
             Time = activity.Time, Payload = JsonSerializer.Serialize(activity), StoredAt = DateTimeOffset.UtcNow });
         var owners = await (from s in db.Set<HyperliquidSetting>() join w in db.TrackedWallets on s.WalletId equals w.Id
-            where s.Enabled select new { Setting = s, Wallet = w }).ToListAsync(ct);
+            where s.Enabled && !s.BillingPaused select new { Setting = s, Wallet = w }).ToListAsync(ct);
         foreach (var owner in owners.Where(o => o.Wallet.Address.Value.Equals(activity.Address, StringComparison.OrdinalIgnoreCase)))
         {
-            if (baseline || activity.LiquidatedVictim || activity.Time < owner.Setting.ActivatedAt.ToUnixTimeMilliseconds()
+            if (entitlement?.Allows(owner.Wallet.Id, TrackingMode.Hyperliquid) == false || baseline || activity.LiquidatedVictim || activity.Time < owner.Setting.ActivatedAt.ToUnixTimeMilliseconds()
                 || activity.Usd is { } usd && usd < owner.Wallet.MinimumUsdValue) continue;
             db.Add(new HyperliquidDelivery { Id = Guid.NewGuid(), EventId = activity.Id, WalletId = owner.Wallet.Id,
                 UserId = owner.Wallet.UserId, Generation = owner.Setting.Generation,

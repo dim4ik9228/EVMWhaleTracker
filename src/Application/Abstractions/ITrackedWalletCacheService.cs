@@ -16,7 +16,7 @@ public sealed record TrackedWalletCacheEntry(
     bool TrackOutgoingTransfers,
     bool TrackTokenTransfers,
     IReadOnlyCollection<SupportedChain> EnabledChains,
-    string? Alias)
+    string? Alias, long? EntitlementRevision = null, DateTimeOffset? EntitlementValidUntil = null)
 {
     /// <summary>
     /// Projects the domain aggregate into the in-memory matching model.

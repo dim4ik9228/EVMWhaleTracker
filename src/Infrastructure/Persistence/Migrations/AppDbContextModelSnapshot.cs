@@ -22,6 +22,46 @@ namespace Infrastructure.Persistence.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Domain.Entities.AccessGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("EndsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long?>("OperatorId")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid?>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Reason")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("ReceiptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ReversedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "EndsAt");
+
+                    b.ToTable("AccessGrant");
+                });
+
             modelBuilder.Entity("Domain.Entities.AddressLabel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -81,6 +121,119 @@ namespace Infrastructure.Persistence.Migrations
                         .HasFilter("\"IsEnabled\" = TRUE AND \"Chain\" IS NOT NULL");
 
                     b.ToTable("AddressLabels", (string)null);
+                });
+
+            modelBuilder.Entity("Domain.Entities.BillingAccount", b =>
+                {
+                    b.Property<long>("UserId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("UserId"));
+
+                    b.Property<Guid?>("FreePolymarketWalletId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("FreeWalletIds")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("SelectionInitialized")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("WasPro")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("BillingAccount");
+                });
+
+            modelBuilder.Entity("Domain.Entities.BillingAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long>("ActorId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Reference")
+                        .HasColumnType("text");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "At");
+
+                    b.ToTable("BillingAudit");
+                });
+
+            modelBuilder.Entity("Domain.Entities.BillingCheckpoint", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Attention")
+                        .HasColumnType("text");
+
+                    b.Property<long>("Offset")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("RetryAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Key");
+
+                    b.ToTable("BillingCheckpoint");
+                });
+
+            modelBuilder.Entity("Domain.Entities.BillingOutbox", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasColumnType("text");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("RetryAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("SentAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Key");
+
+                    b.HasIndex("SentAt", "RetryAt");
+
+                    b.ToTable("BillingOutbox");
                 });
 
             modelBuilder.Entity("Domain.Entities.HyperliquidCheckpoint", b =>
@@ -191,6 +344,12 @@ namespace Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("ActivatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("BillingPauseReason")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("BillingPaused")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("Enabled")
                         .HasColumnType("boolean");
 
@@ -200,6 +359,128 @@ namespace Infrastructure.Persistence.Migrations
                     b.HasKey("WalletId");
 
                     b.ToTable("HyperliquidSetting");
+                });
+
+            modelBuilder.Entity("Domain.Entities.PaymentAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CheckoutUrl")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal?>("ExpectedAmount")
+                        .HasPrecision(38, 18)
+                        .HasColumnType("numeric(38,18)");
+
+                    b.Property<string>("ExternalId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("InvoiceId")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal?>("PaidAmount")
+                        .HasPrecision(38, 18)
+                        .HasColumnType("numeric(38,18)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Retries")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("RetryAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OrderId", "Provider")
+                        .IsUnique();
+
+                    b.HasIndex("Provider", "ExternalId")
+                        .IsUnique();
+
+                    b.ToTable("PaymentAttempt");
+                });
+
+            modelBuilder.Entity("Domain.Entities.PaymentReceipt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(38, 18)
+                        .HasColumnType("numeric(38,18)");
+
+                    b.Property<Guid?>("AttemptId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ChargeId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("EventKey")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Evidence")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("ReceivedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Retries")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("RetryAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("Reversal")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<long?>("UserId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Provider", "ChargeId")
+                        .IsUnique()
+                        .HasFilter("\"State\" = 'Applied'");
+
+                    b.HasIndex("Provider", "EventKey")
+                        .IsUnique();
+
+                    b.ToTable("PaymentReceipt");
                 });
 
             modelBuilder.Entity("Domain.Entities.PolymarketBlock", b =>
@@ -427,6 +708,12 @@ namespace Infrastructure.Persistence.Migrations
                     b.Property<long?>("ActivationBlock")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("BillingPauseReason")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("BillingPaused")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("Enabled")
                         .HasColumnType("boolean");
 
@@ -455,6 +742,45 @@ namespace Infrastructure.Persistence.Migrations
                     b.HasIndex("Enabled", "SourceAddress");
 
                     b.ToTable("PolymarketSetting");
+                });
+
+            modelBuilder.Entity("Domain.Entities.PurchaseOrder", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CheckoutExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DurationHours")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Fulfilled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Plan")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("StarsPrice")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("UsdPrice")
+                        .HasPrecision(28, 12)
+                        .HasColumnType("numeric(28,12)");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.ToTable("PurchaseOrder");
                 });
 
             modelBuilder.Entity("Domain.Entities.TrackedWallet", b =>
@@ -509,6 +835,37 @@ namespace Infrastructure.Persistence.Migrations
                     b.ToTable("TrackedWallets", (string)null);
                 });
 
+            modelBuilder.Entity("Domain.Entities.WalletAccessState", b =>
+                {
+                    b.Property<Guid>("WalletId")
+                        .HasColumnType("uuid");
+
+                    b.Property<long>("AccountRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("ActiveSince")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("EnrollmentRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("EvmEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("EvmUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("HyperliquidUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("PolymarketUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("WalletId");
+
+                    b.ToTable("WalletAccessState");
+                });
+
             modelBuilder.Entity("Domain.Entities.HyperliquidDelivery", b =>
                 {
                     b.HasOne("Domain.Entities.HyperliquidEvent", null)
@@ -533,6 +890,15 @@ namespace Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Domain.Entities.PaymentAttempt", b =>
+                {
+                    b.HasOne("Domain.Entities.PurchaseOrder", null)
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Domain.Entities.PolymarketDelivery", b =>
                 {
                     b.HasOne("Domain.Entities.PolymarketEvent", null)
@@ -553,6 +919,15 @@ namespace Infrastructure.Persistence.Migrations
                     b.HasOne("Domain.Entities.TrackedWallet", null)
                         .WithOne()
                         .HasForeignKey("Domain.Entities.PolymarketSetting", "WalletId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Domain.Entities.WalletAccessState", b =>
+                {
+                    b.HasOne("Domain.Entities.TrackedWallet", null)
+                        .WithOne()
+                        .HasForeignKey("Domain.Entities.WalletAccessState", "WalletId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

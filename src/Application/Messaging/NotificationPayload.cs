@@ -21,7 +21,7 @@ public sealed record NotificationPayload(
     decimal Amount,
     decimal? UsdValue,
     ulong BlockNumber,
-    DateTimeOffset BlockTimestampUtc);
+    DateTimeOffset BlockTimestampUtc, long? EntitlementRevision = null, DateTimeOffset? EntitlementValidUntil = null);
 
 /// <summary>
 /// A transaction-level notification containing one or more wallet activity lines.
@@ -35,7 +35,7 @@ public sealed record AggregatedNotificationPayload(
     string TransactionHash,
     ulong BlockNumber,
     DateTimeOffset BlockTimestampUtc,
-    IReadOnlyList<NotificationTransferLine> Lines)
+    IReadOnlyList<NotificationTransferLine> Lines, long? EntitlementRevision = null, DateTimeOffset? EntitlementValidUntil = null)
 {
     public static AggregatedNotificationPayload FromSingle(NotificationPayload payload)
         => new(
@@ -47,7 +47,7 @@ public sealed record AggregatedNotificationPayload(
             payload.TransactionHash,
             payload.BlockNumber,
             payload.BlockTimestampUtc,
-            [NotificationTransferLine.FromPayload(payload)]);
+            [NotificationTransferLine.FromPayload(payload)], payload.EntitlementRevision, payload.EntitlementValidUntil);
 }
 
 /// <summary>

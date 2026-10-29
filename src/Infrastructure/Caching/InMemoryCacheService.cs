@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Application.Abstractions;
+using Application.Billing;
 using Domain.Entities;
 using Domain.ValueObjects;
 
@@ -8,7 +9,7 @@ namespace Infrastructure.Caching;
 /// <summary>
 /// Thread-safe in-memory lookup table for tracked addresses and wallet-specific notification settings.
 /// </summary>
-public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposable
+public sealed class InMemoryCacheService(IEntitlementPolicy? policy = null) : ITrackedWalletCacheService, IDisposable
 {
     private readonly HashSet<Address> _trackedAddresses = [];
     private readonly Dictionary<Address, Dictionary<Guid, TrackedWalletCacheEntry>> _trackedWalletEntries = new();
@@ -217,7 +218,7 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         {
             if (_trackedWalletEntries.TryGetValue(address, out var cachedEntries))
             {
-                entries = cachedEntries.Values.ToArray();
+                entries = cachedEntries.Values.Where(x => policy?.Allows(x.Id, TrackingMode.Evm) != false).Select(x => x with { EntitlementRevision = policy?.Get(x.Id)?.Revision, EntitlementValidUntil = policy?.Get(x.Id)?.ValidUntil }).ToArray();
                 return true;
             }
 
@@ -235,7 +236,7 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
         _lock.EnterReadLock();
         try
         {
-            return new ReadOnlyCollection<Address>(_trackedAddresses.ToArray());
+            return new ReadOnlyCollection<Address>(_trackedAddresses.Where(a => policy?.EnforcementEnabled != true || _trackedWalletEntries.TryGetValue(a, out var es) && es.Values.Any(e => policy.Allows(e.Id, TrackingMode.Evm))).ToArray());
         }
         finally
         {
@@ -268,6 +269,7 @@ public sealed class InMemoryCacheService : ITrackedWalletCacheService, IDisposab
 
     private bool AddCore(TrackedWallet trackedWallet, out bool addressAdded)
     {
+        if (policy?.Allows(trackedWallet.Id, TrackingMode.Evm) == false) { addressAdded = false; return false; }
         addressAdded = _trackedAddresses.Add(trackedWallet.Address);
         if (!_trackedWalletEntries.TryGetValue(trackedWallet.Address, out var entries))
         {

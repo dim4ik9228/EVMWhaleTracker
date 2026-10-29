@@ -1,3 +1,4 @@
+using Application.Billing;
 using Application.Messaging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -13,6 +14,8 @@ namespace Presentation.Telegram.Workers;
 /// </summary>
 public sealed class NotificationDispatcherWorker : BackgroundService
 {
+    private readonly IEntitlementPolicy? _entitlements;
+    private readonly IRecipientAccess? _recipientAccess;
     private readonly OnChainPipelineChannels _channels;
     private readonly ITelegramBotClient _telegramBotClient;
     private readonly TelegramGlobalRateLimiter _rateLimiter;
@@ -30,7 +33,7 @@ public sealed class NotificationDispatcherWorker : BackgroundService
         ITelegramNotificationEnricher notificationEnricher,
         ITelegramNotificationRenderer notificationRenderer,
         ITelegramBotUsernameProvider botUsernameProvider,
-        ILogger<NotificationDispatcherWorker> logger)
+        ILogger<NotificationDispatcherWorker> logger, IEntitlementPolicy? entitlements = null, IRecipientAccess? recipientAccess = null)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(telegramBotClient);
@@ -40,6 +43,8 @@ public sealed class NotificationDispatcherWorker : BackgroundService
         ArgumentNullException.ThrowIfNull(botUsernameProvider);
         ArgumentNullException.ThrowIfNull(logger);
 
+        _entitlements = entitlements;
+        _recipientAccess = recipientAccess;
         _channels = channels;
         _telegramBotClient = telegramBotClient;
         _logger = logger;
@@ -111,6 +116,9 @@ public sealed class NotificationDispatcherWorker : BackgroundService
             waitForPermitAsync: ct => _rateLimiter.WaitAsync(payload.TelegramUserId, ct),
             sendAsync: async ct =>
             {
+                if (_recipientAccess is not null && !await _recipientAccess.AllowsAsync(payload.TelegramUserId, payload.TrackedWalletId, TrackingMode.Evm, payload.BlockTimestampUtc, payload.EntitlementRevision, ct)) return;
+                if (_entitlements?.EnforcementEnabled == true && (!_entitlements.Allows(payload.TrackedWalletId, TrackingMode.Evm, payload.BlockTimestampUtc, payload.EntitlementRevision)
+                    || payload.EntitlementValidUntil is { } end && DateTimeOffset.UtcNow >= end)) return;
                 await _telegramBotClient.SendMessage(
                     chatId: payload.TelegramUserId,
                     text: renderedMessage.Text,

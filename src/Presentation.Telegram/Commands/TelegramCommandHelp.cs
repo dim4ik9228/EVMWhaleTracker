@@ -15,6 +15,8 @@ public static class TelegramCommandHelp
         Available commands:
         <code>/add &lt;address&gt; [name]</code>
         <code>/list</code>
+        <code>/subscription</code> · plans, renewal and Free selection
+        <code>/terms</code> · <code>/paysupport</code>
         <code>/remove &lt;address&gt;</code>
 
         Examples:

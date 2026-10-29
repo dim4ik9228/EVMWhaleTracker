@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Application.Polymarket;
 using Domain.Common;
+using Application.Billing;
+using Infrastructure.Billing;
 using Domain.Entities;
 using Domain.ValueObjects;
 using Infrastructure.Persistence;
@@ -11,7 +13,7 @@ namespace Infrastructure.Polymarket;
 
 /// <summary>Explicit owner-safe source binding and default-off preferences. Tracking stays fail-closed until provider proof.</summary>
 public sealed class PolymarketSettings(AppDbContext db, IPolymarketProfileResolver profiles, IOptions<PolymarketOptions> options,
-    IOptions<PolymarketPolygonOptions> polygon, IPolymarketPolygonRpc rpc, PolymarketPolygonHealth health) : IPolymarketSettings
+    IOptions<PolymarketPolygonOptions> polygon, IPolymarketPolygonRpc rpc, PolymarketPolygonHealth health, IBillingService? billing = null) : IPolymarketSettings
 {
     public const string ProviderGate = "Needs attention — activity provider verification is blocked; tracking and delivery are unavailable.";
     private const long AdmissionLock = 74220001;
@@ -23,6 +25,7 @@ public sealed class PolymarketSettings(AppDbContext db, IPolymarketProfileResolv
         var previousProfile = previous?.ProfileJson is null ? null : JsonSerializer.Deserialize<PolymarketProfile>(previous.ProfileJson);
         var lookup = await profiles.ResolveAsync(previousProfile?.ResolvedAddress ?? wallet.Address.Value, ct);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await BillingService.LockOwnerAsync(db, userId, ct);
         await db.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_xact_lock({AdmissionLock})", ct);
         if (!await db.TrackedWallets.AnyAsync(w => w.Id == walletId && w.UserId == userId, ct)) return Failure(PolymarketErrors.WalletNotFound);
         var s = await db.Set<PolymarketSetting>().SingleOrDefaultAsync(x => x.WalletId == walletId, ct);
@@ -47,7 +50,7 @@ public sealed class PolymarketSettings(AppDbContext db, IPolymarketProfileResolv
         }
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
         var status = Status(wallet, s, lookup.State);
-        if (s.Enabled && s.SourceAddress is not null)
+        if (s.Enabled && !s.BillingPaused && s.SourceAddress is not null)
         {
             var checkpoint = await db.Set<PolymarketCheckpoint>().AsNoTracking().SingleOrDefaultAsync(x => x.SourceAddress == s.SourceAddress, ct);
             if (checkpoint?.Gap is not null) status = status with { Status = PolymarketSettingsDiagnostics.DegradedHistory(checkpoint.Gap) };
@@ -65,6 +68,7 @@ public sealed class PolymarketSettings(AppDbContext db, IPolymarketProfileResolv
         if (verified.State != RuntimeStates.Profile.Found || verified.Stale || verified.Profile?.TradingAddress != source)
             return Failure(PolymarketErrors.MappingUnverified);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await BillingService.LockOwnerAsync(db, userId, ct);
         await db.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_xact_lock({AdmissionLock})", ct);
         var wallet = await db.TrackedWallets.SingleOrDefaultAsync(w => w.Id == walletId && w.UserId == userId, ct);
         if (wallet is null) return Failure(PolymarketErrors.WalletNotFound);
@@ -81,11 +85,21 @@ public sealed class PolymarketSettings(AppDbContext db, IPolymarketProfileResolv
         s.SourceAddress = source; s.ProposedAddress = source; s.NeedsAttention = false; s.Enabled = false;
         s.Generation = Guid.NewGuid(); s.ActivatedAt = DateTimeOffset.UtcNow;
         await CancelAsync(walletId, ct); await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
+        if (billing is not null) await billing.RefreshAsync(userId, ct);
         return Result<PolymarketWalletStatus>.Success(Status(wallet, s));
     }
     public async Task<Result<PolymarketWalletStatus>> SetAsync(long userId, Guid walletId, bool enabled, Guid expectedGeneration, CancellationToken ct)
     {
+        long? activationHead = null;
+        if (enabled)
+        {
+            try { await rpc.VerifyChainAsync(ct); activationHead = await rpc.HeadAsync(ct); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex) when (ex is InvalidDataException or HttpRequestException or IOException or OperationCanceledException)
+            { return Failure(PolymarketErrors.ProviderUnavailable); }
+        }
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await BillingService.LockOwnerAsync(db, userId, ct);
         await db.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_xact_lock({AdmissionLock})", ct);
         var wallet = await db.TrackedWallets.SingleOrDefaultAsync(w => w.Id == walletId && w.UserId == userId, ct);
         if (wallet is null) return Failure(PolymarketErrors.WalletNotFound);
@@ -94,31 +108,25 @@ public sealed class PolymarketSettings(AppDbContext db, IPolymarketProfileResolv
         if (s is null || s.Generation != expectedGeneration) return Failure(PolymarketErrors.StaleMenu);
         if (enabled)
         {
+            if (billing is not null) { var access = await billing.CanEnableAsync(userId, walletId, TrackingMode.Polymarket, ct); if (access.IsFailure) return Failure(access.Error); }
             if (!options.Value.Enabled || !polygon.Value.Enabled) return Failure(PolymarketErrors.TrackingPaused);
             if (s.SourceAddress is null || s.NeedsAttention) return Failure(PolymarketErrors.ConfirmationRequired);
-            var count = await db.Set<PolymarketSetting>().Where(x => x.Enabled && x.SourceAddress != null).Select(x => x.SourceAddress).Distinct().CountAsync(ct);
-            if (count >= polygon.Value.MaxUniqueAddresses && !await db.Set<PolymarketSetting>().AnyAsync(x => x.Enabled && x.SourceAddress == s.SourceAddress, ct))
+            var count = await db.Set<PolymarketSetting>().Where(x => x.Enabled && !x.BillingPaused && x.SourceAddress != null).Select(x => x.SourceAddress).Distinct().CountAsync(ct);
+            if (count >= polygon.Value.MaxUniqueAddresses && !await db.Set<PolymarketSetting>().AnyAsync(x => x.Enabled && !x.BillingPaused && x.SourceAddress == s.SourceAddress, ct))
                 return Failure(PolymarketErrors.Capacity);
-            try
-            {
-                await rpc.VerifyChainAsync(ct);
-                // A sealed latest block is the precise enrollment boundary: all later blocks are future activity,
-                // including logs mined in the next block while another follower already watches the account.
-                s.ActivationBlock = await rpc.HeadAsync(ct);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-            catch (Exception ex) when (ex is InvalidDataException or HttpRequestException or IOException or OperationCanceledException)
-            { return Failure(PolymarketErrors.ProviderUnavailable); }
+            s.ActivationBlock = activationHead;
             s.ActivatedAt = DateTimeOffset.UtcNow;
         }
-        s.Enabled = enabled; s.Generation = Guid.NewGuid();
+        s.Enabled = enabled; s.BillingPaused = false; s.BillingPauseReason = null; s.Generation = Guid.NewGuid();
         await CancelAsync(walletId, ct); await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
+        if (billing is not null) await billing.RefreshAsync(userId, ct);
         return Result<PolymarketWalletStatus>.Success(Status(wallet, s));
     }
     public async Task<Result<PolymarketWalletStatus>> MinimumAsync(long userId, Guid walletId, decimal minimum, Guid expectedGeneration, CancellationToken ct)
     {
         if (minimum < 0 || minimum > 1000000000000m) return Failure(PolymarketErrors.InvalidMinimum);
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await BillingService.LockOwnerAsync(db, userId, ct);
         await db.Database.ExecuteSqlRawAsync($"SELECT pg_advisory_xact_lock({AdmissionLock})", ct);
         var wallet = await db.TrackedWallets.SingleOrDefaultAsync(w => w.Id == walletId && w.UserId == userId, ct);
         if (wallet is null) return Failure(PolymarketErrors.WalletNotFound);
@@ -141,6 +149,7 @@ public sealed class PolymarketSettings(AppDbContext db, IPolymarketProfileResolv
         : s.ProposedAddress is null ? PolymarketSettingsDiagnostics.AccountUnresolved
         : !polygon.Value.Enabled ? PolymarketSettingsDiagnostics.OffPolygonTrackingPausedProfileAvailable
         : !s.Enabled ? PolymarketSettingsDiagnostics.TrackingOff
+        : s.BillingPaused ? s.BillingPauseReason ?? BillingDiagnostics.FreeSelectionPaused
         : health.Status.StartsWith(PolymarketSettingsDiagnostics.OffNoEnabledAccounts, StringComparison.Ordinal)
             ? PolymarketSettingsDiagnostics.AccountStarting
             : health.Status,

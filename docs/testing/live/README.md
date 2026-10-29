@@ -18,8 +18,9 @@ A change, build, deployment, ordinary test request or instruction to create/upda
 | [Runtime](runtime.md) | RT-01, RT-02 | RT-03 natural EVM transfer |
 | [Hyperliquid](hyperliquid.md) | HL-01, HL-02 | HL-03 threshold; HL-04 restart recovery; HL-05 natural ledger event |
 | [Polymarket](polymarket.md) | PM-01, PM-02 | PM-03 threshold; PM-04 restart recovery; PM-05 natural redemption |
+| [Billing](billing.md) | BILL-01 display/support/privacy only | BILL-02 prepared Free selection; BILL-03 Stars; BILL-04 crypto; BILL-05 prepared expiry; BILL-06 recovery; BILL-07 admin navigation without grants |
 
-Feature suites include RT-01 as a prerequisite. A request for all live smoke checks runs the three default selections, within one overall budget. A feature request does not select its additional cases unless named. Financial actions are never part of these suites.
+Feature suites include RT-01 as a prerequisite. A request for all live smoke checks runs the listed default selections, within one overall budget. A feature request does not select its additional cases unless named. Financial actions are never part of default smoke checks or the runtime/Hyperliquid/Polymarket suites. Explicitly named financial billing cases require the separate environment, payer, amount/budget and refund/restart authorization described in the billing runbook; they do not override the ordinary no-spending rule implicitly.
 
 ## Before a run
 

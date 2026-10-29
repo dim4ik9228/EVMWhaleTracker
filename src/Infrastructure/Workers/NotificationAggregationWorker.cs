@@ -131,14 +131,14 @@ public sealed class NotificationAggregationWorker : BackgroundService
         long TelegramUserId,
         Domain.Common.SupportedChain Chain,
         string TrackedWalletAddress,
-        string TransactionHash)
+        string TransactionHash, Guid WalletId, long? EntitlementRevision)
     {
         public static AggregationKey FromPayload(NotificationPayload payload)
             => new(
                 payload.TelegramUserId,
                 payload.Chain,
                 payload.TrackedWalletAddress.ToLowerInvariant(),
-                payload.TransactionHash.ToLowerInvariant());
+                payload.TransactionHash.ToLowerInvariant(), payload.TrackedWalletId, payload.EntitlementRevision);
     }
 
     private sealed class PendingNotification
@@ -146,6 +146,8 @@ public sealed class NotificationAggregationWorker : BackgroundService
         private readonly Lock _sync = new();
         private readonly List<NotificationTransferLine> _lines = [];
         private readonly long _telegramUserId;
+        private readonly long? _entitlementRevision;
+        private readonly DateTimeOffset? _entitlementValidUntil;
         private readonly Guid _trackedWalletId;
         private readonly Domain.Common.SupportedChain _chain;
         private readonly string _trackedWalletAddress;
@@ -159,6 +161,8 @@ public sealed class NotificationAggregationWorker : BackgroundService
         public PendingNotification(NotificationPayload firstPayload, TimeSpan debounceInterval)
         {
             _telegramUserId = firstPayload.TelegramUserId;
+            _entitlementRevision = firstPayload.EntitlementRevision;
+            _entitlementValidUntil = firstPayload.EntitlementValidUntil;
             _trackedWalletId = firstPayload.TrackedWalletId;
             _chain = firstPayload.Chain;
             _trackedWalletAddress = firstPayload.TrackedWalletAddress;
@@ -213,7 +217,7 @@ public sealed class NotificationAggregationWorker : BackgroundService
                     _transactionHash,
                     _blockNumber,
                     _blockTimestampUtc,
-                    _lines.ToArray());
+                    _lines.ToArray(), _entitlementRevision, _entitlementValidUntil);
             }
         }
     }
