@@ -485,3 +485,7 @@ $RECYCLE.BIN/
 # Large local address-label imports and generated candidates.
 data/address-labels/raw/
 data/address-labels/generated/
+
+appsettings.Local.json
+.env.*
+!.env.example

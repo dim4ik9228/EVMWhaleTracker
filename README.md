@@ -2,47 +2,27 @@
 
 ## Local Docker Setup
 
-If you want to run the app through `docker compose up --build`, the container cannot read your host user secrets directly.
+Public defaults live in `src/Presentation.Telegram/appsettings.json`; private deployment settings belong in ignored `appsettings.Local.json`, and `.env` contains credentials only. All five supported EVM networks are enabled by default. Native scanning remains disabled.
 
-Use the helper script to generate a local `.env` file from the `Presentation.Telegram` user secrets:
+Before migrating an existing installation, capture its effective configuration privately and follow the [configuration operations guide](docs/operations/configuration.md). Preserve the populated database password/volume and local Hyperliquid/Polymarket and billing flags before regenerating dotenv from User Secrets. The guide includes initialization, precedence, migration, export and app-only deployment commands.
 
-```powershell
-.\scripts\Export-DockerEnvFromUserSecrets.ps1
-```
+## Payments and subscriptions
 
-Then start the stack:
+The billing implementation adds private `/subscription` screens, paginated Free-wallet selection, terms/support, and one-time Pro purchases through **1,450 Stars** or **USD 29 in USDT on BNB Smart Chain via NOWPayments**, for thirty days. Free allows ten active address entries and one Polymarket entry; Pro allows fifty entries, Polymarket within that allowance, and up to ten Hyperliquid entries subject to existing shared capacity. All runtime-enabled EVM chains, aliases, filters and full notification details remain available to Free users. Expiry preserves saved wallets and preferences.
 
-```powershell
-docker compose up -d --build
-```
-
-The generated `.env` is ignored by git and is used only for local development.
-
-Postgres data is stored in `.docker/postgres-data/`, so the database survives container recreation locally.
-
-Both services use `restart: unless-stopped`. Start the whole stack so Compose waits for PostgreSQL health before starting the bot. Docker must be running; after an explicit stop, run the command above again. See the [database restart recovery record](docs/plans/postgres-restart-recovery.md) for the 2026-10-23 outage and recovery limits.
-
-RPC URLs are configured as API-key-free base URLs. Put the key in user secrets or `.env` separately:
-
-```env
-BLOCKCHAIN_RPC_API_KEY=your-provider-key
-BLOCKCHAIN_0_HTTP_RPC_URL=https://bsc-mainnet.infura.io/v3/
-BLOCKCHAIN_0_WEB_SOCKET_RPC_URL=wss://bsc-mainnet.infura.io/ws/v3/
-```
-
-The app appends `BLOCKCHAIN_RPC_API_KEY` at startup for every configured Infura network. For providers that need the key in the middle of the URL, use `{ApiKey}` or `{RpcApiKey}` in the URL.
+Sales and entitlement enforcement default off for deliberate rollout. Configure merchant credentials, support/terms, public HTTPS callbacks and operator access before enabling sales; hosted checkout uses an API key and IPN secret without dashboard credentials. Known payment IDs are polled; missing identities need audited operator recovery. The current global Hyperliquid and Polymarket admission caps remain independent of plan allowances. See [billing setup and operations](docs/operations/billing.md), [implementation requirements](docs/plans/payments-and-paywall-integration.md), and [manually invoked billing acceptance](docs/testing/live/billing.md). Code/tests do not establish live checkout or payout validation.
 
 ## Robinhood Chain
 
-Robinhood Chain (4663, RH) uses the existing Infura WebSocket subscriber. Configuration slot 4 is disabled by default; slots 0-3 remain BSC, Base, Arbitrum, and Ethereum. The exporter emits these five slots and preserves their secret overrides. Local RH rollout delivered real Telegram transfer alerts.
+Robinhood Chain (4663, RH) uses the existing Infura WebSocket subscriber. Configuration slot 4 is enabled by default; slots 0-3 remain BSC, Base, Arbitrum, and Ethereum. Settings define these five slots and the exporter preserves their credential overrides. Local RH rollout delivered real Telegram transfer alerts.
 
 Arc support was removed on 2026-10-25 at the user's request. There are no Arc endpoints, subscriptions, menu actions, or pricing entries. Numeric value 5042 remains reserved solely for saved-setting compatibility: an explicit saved Arc-only list stays restricted and tracks no active EVM network until the user selects one. Other saved settings are preserved. See [the removal record](docs/plans/arc-removal.md).
 
-Wallets with an empty enabled-chain list include every runtime-enabled network; explicit saved lists retain their membership. DexScreener token pricing uses `robinhood`; tokens without a price still notify with their token amount and bypass USD thresholds. Native transfer scanning remains disabled. Normal Compose builds the production `final` stage; the debug override retains `debug`. Dotenv files and local database files are excluded from the Docker build context.
+Wallets with an empty enabled-chain list include every runtime-enabled network; explicit saved lists retain their membership. DexScreener token pricing uses `robinhood`; tokens without a resolved USD price notify only when the wallet minimum is zero. A positive EVM USD minimum suppresses unpriced transfers, including during pricing outages; resolved values use an inclusive threshold. Native transfer scanning remains disabled. Normal Compose builds the production `final` stage; the debug override retains `debug`. Dotenv files and local database files are excluded from the Docker build context.
 
 ## Polymarket predictions
 
-Profile/name lookup and Polygon prediction tracking are separate opt-ins. Enable `POLYMARKET_ENABLED=true` for public profiles and `POLYMARKET_POLYGON_ENABLED=true` for settlement ingestion/delivery. Both checked-in defaults are false. Polygon mainnet must be enabled in the Infura project; the adapter uses the existing shared RPC key unless `POLYMARKET_POLYGON_RPC_API_KEY` overrides it. Keep RPC base URLs key-free. Local API access may require the user's VPN/network route.
+Profile/name lookup and Polygon prediction tracking are separate opt-ins. Set `Polymarket:Enabled` and `PolymarketPolygon:Enabled` to true in local appsettings for public profiles and settlement ingestion/delivery. Both checked-in defaults are false. Polygon mainnet must be enabled in the Infura project; the adapter uses the existing shared RPC key unless `PolymarketPolygon__RpcApiKey` overrides it. Keep RPC base URLs key-free. Local API access may require the user's VPN/network route.
 
 In a wallet's Polymarket editor, confirm the automatically resolved trading account, set the independent minimum gross collateral value, and turn tracking on. The original EVM address, other network settings and custom alias remain separate. Alerts show executed buys/sells and supported aggregate redemptions with cached market/outcome names and transaction links. Market/limit orders notify only when executed. Redemptions bypass the trade minimum; payout is not profit. Prices and gross amounts use the actual pUSD/USDC.e collateral units.
 
@@ -76,7 +56,7 @@ On Ethereum cache misses, the bot can also use ENS reverse lookup through the co
 
 ## Tracking Mode
 
-Hyperliquid/HyperCore has a separate default-off adapter. Set `HYPERLIQUID_ENABLED=true` on a planned restart and explicitly turn on Hyperliquid in an existing wallet's editor to enroll. It supports native USDC perpetual fills and deposit/withdrawal/liquidation ledger events; an EVM network selection never opts a wallet in. The deployment shares one public socket and reserves at most ten distinct addresses across all owners. Other clients on the same public IP also consume Hyperliquid's provider budget.
+Hyperliquid/HyperCore has a separate default-off adapter. Set `Hyperliquid:Enabled` to true in local appsettings on a planned restart and explicitly turn on Hyperliquid in an existing wallet's editor to enroll. It supports native USDC perpetual fills and deposit/withdrawal/liquidation ledger events; an EVM network selection never opts a wallet in. The deployment shares one public socket and reserves at most ten distinct addresses across all owners. Other clients on the same public IP also consume Hyperliquid's provider budget.
 
 Core settings, source identities, recovery boundaries and pending Telegram deliveries are durable in PostgreSQL. Recovery defaults to 24 hours with bounded inclusive pagination; history limits produce visible degraded status. Ledger completeness is conservatively reported as incomplete. Disabling the global flag on restart stops Core ingestion/recovery/delivery and preserves settings for later recovery. Local live rollout on 2026-10-20 verified actual Telegram BTC alerts, planned restart recovery, minimum-USD filtering and opt-out cleanup. Local Core is enabled with no wallets automatically opted in. Live ledger events, TWAP execution coverage and externally exactly-once Telegram delivery remain unverified. See the implementation brief for the validation evidence and remaining rollout work.
 

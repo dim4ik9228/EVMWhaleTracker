@@ -41,7 +41,7 @@ using Telegram.Bot;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Configuration.AddUserSecrets<Program>(optional: true, reloadOnChange: true);
+RuntimeConfiguration.Configure<Program>(builder.Configuration, builder.Environment.ContentRootPath, builder.Environment.EnvironmentName, args);
 
 builder.Logging.ClearProviders();
 builder.Services.AddSerilog((services, loggerConfiguration) =>

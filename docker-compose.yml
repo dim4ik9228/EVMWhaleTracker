@@ -6,9 +6,9 @@ services:
     environment:
       POSTGRES_DB: EvmWhaleTracker
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Export existing database credentials first}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - ./.docker/postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -16,7 +16,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
   app:
     build:
       context: .
@@ -26,92 +25,20 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    env_file:
+      - path: .env
+        required: true
     environment:
-      PolymarketPolygon__Families__0: ${POLYMARKET_POLYGON_FAMILY_0:-ctf-current}
-      PolymarketPolygon__Families__1: ${POLYMARKET_POLYGON_FAMILY_1:-ctf-negative-current}
-      PolymarketPolygon__Families__2: ${POLYMARKET_POLYGON_FAMILY_2:-position-v2}
-      PolymarketPolygon__Families__3: ${POLYMARKET_POLYGON_FAMILY_3:-ctf-legacy}
-      PolymarketPolygon__Families__4: ${POLYMARKET_POLYGON_FAMILY_4:-ctf-negative-legacy}
-      PolymarketPolygon__Enabled: ${POLYMARKET_POLYGON_ENABLED:-false}
-      PolymarketPolygon__HttpRpcUrl: ${POLYMARKET_POLYGON_HTTP_RPC_URL:-https://polygon-mainnet.infura.io/v3/}
-      PolymarketPolygon__WebSocketRpcUrl: ${POLYMARKET_POLYGON_WEB_SOCKET_RPC_URL:-wss://polygon-mainnet.infura.io/ws/v3/}
-      PolymarketPolygon__RpcApiKey: ${POLYMARKET_POLYGON_RPC_API_KEY:-}
-      PolymarketPolygon__RegistryVersion: ${POLYMARKET_POLYGON_REGISTRY_VERSION:-polygon-2026-10-25.1}
-      PolymarketPolygon__FinalityMode: ${POLYMARKET_POLYGON_FINALITY_MODE:-Finalized}
-      PolymarketPolygon__ConfirmationDepth: ${POLYMARKET_POLYGON_CONFIRMATION_DEPTH:-128}
-      PolymarketPolygon__MaxUniqueAddresses: ${POLYMARKET_POLYGON_MAX_UNIQUE_ADDRESSES:-20}
-      PolymarketPolygon__MaxSubscriptions: ${POLYMARKET_POLYGON_MAX_SUBSCRIPTIONS:-6}
-      PolymarketPolygon__QueueCapacity: ${POLYMARKET_POLYGON_QUEUE_CAPACITY:-256}
-      PolymarketPolygon__MaximumFrameBytes: ${POLYMARKET_POLYGON_MAXIMUM_FRAME_BYTES:-2097152}
-      PolymarketPolygon__MaximumResponseBytes: ${POLYMARKET_POLYGON_MAXIMUM_RESPONSE_BYTES:-4194304}
-      PolymarketPolygon__TimeoutSeconds: ${POLYMARKET_POLYGON_TIMEOUT_SECONDS:-15}
-      PolymarketPolygon__RpcMinimumIntervalMilliseconds: ${POLYMARKET_POLYGON_RPC_MINIMUM_INTERVAL_MS:-250}
-      PolymarketPolygon__RecoveryBlocks: ${POLYMARKET_POLYGON_RECOVERY_BLOCKS:-43200}
-      PolymarketPolygon__LogRangeBlocks: ${POLYMARKET_POLYGON_LOG_RANGE_BLOCKS:-1000}
-      PolymarketPolygon__RecoveryRequests: ${POLYMARKET_POLYGON_RECOVERY_REQUESTS:-200}
-      PolymarketPolygon__RetainedAncestry: ${POLYMARKET_POLYGON_RETAINED_ANCESTRY:-512}
-      PolymarketPolygon__RetentionDays: ${POLYMARKET_POLYGON_RETENTION_DAYS:-14}
-      PolymarketPolygon__EnrichmentWaitSeconds: ${POLYMARKET_POLYGON_ENRICHMENT_WAIT_SECONDS:-60}
-      PolymarketPolygon__MetadataCacheCapacity: ${POLYMARKET_POLYGON_METADATA_CACHE_CAPACITY:-2048}
-      PolymarketPolygon__MarketsUrl: ${POLYMARKET_POLYGON_MARKETS_URL:-https://gamma-api.polymarket.com/markets}
-      Polymarket__Enabled: ${POLYMARKET_ENABLED:-false}
-      Polymarket__ProfileUrl: ${POLYMARKET_PROFILE_URL:-https://gamma-api.polymarket.com/public-profile}
-      Polymarket__ActivityUrl: ${POLYMARKET_ACTIVITY_URL:-https://data-api.polymarket.com/v2/activity}
-      Polymarket__TimeoutSeconds: ${POLYMARKET_TIMEOUT_SECONDS:-5}
-      Polymarket__PollSeconds: ${POLYMARKET_POLL_SECONDS:-10}
-      Polymarket__MaxUniqueWallets: ${POLYMARKET_MAX_UNIQUE_WALLETS:-20}
-      Polymarket__RequestsPerMinute: ${POLYMARKET_REQUESTS_PER_MINUTE:-120}
-      Polymarket__HttpConcurrency: ${POLYMARKET_HTTP_CONCURRENCY:-2}
-      Polymarket__PageSize: ${POLYMARKET_PAGE_SIZE:-100}
-      Polymarket__MaximumPages: ${POLYMARKET_MAXIMUM_PAGES:-10}
-      Polymarket__MaximumResponseBytes: ${POLYMARKET_MAXIMUM_RESPONSE_BYTES:-2097152}
-      Polymarket__OverlapMinutes: ${POLYMARKET_OVERLAP_MINUTES:-5}
-      Polymarket__ReconciliationMinutes: ${POLYMARKET_RECONCILIATION_MINUTES:-60}
-      Polymarket__RecoveryHours: ${POLYMARKET_RECOVERY_HOURS:-24}
-      Polymarket__RetentionDays: ${POLYMARKET_RETENTION_DAYS:-7}
-      Polymarket__ProfileTtlHours: ${POLYMARKET_PROFILE_TTL_HOURS:-24}
-      Polymarket__MissingProfileTtlMinutes: ${POLYMARKET_MISSING_PROFILE_TTL_MINUTES:-60}
-      Polymarket__ProfileCacheCapacity: ${POLYMARKET_PROFILE_CACHE_CAPACITY:-512}
+      ASPNETCORE_URLS: http://+:8080
       ASPNETCORE_ENVIRONMENT: Production
-      ConnectionStrings__Default: Host=postgres;Port=5432;Database=EvmWhaleTracker;Username=postgres;Password=postgres
-      TelegramBot__BotToken: ${TELEGRAM_BOT_TOKEN:-}
-      BlockchainNetworks__RpcApiKey: ${BLOCKCHAIN_RPC_API_KEY:-}
-      BlockchainNetworks__EnableRpcDiagnostics: ${BLOCKCHAIN_ENABLE_RPC_DIAGNOSTICS:-false}
-      BlockchainNetworks__PreferWebSocket: "true"
-      BlockchainNetworks__PollInterval: ${BLOCKCHAIN_POLL_INTERVAL:-00:00:02}
-      BlockchainNetworks__WebSocketReconnectDelay: ${BLOCKCHAIN_WEB_SOCKET_RECONNECT_DELAY:-00:00:05}
-      BlockchainNetworks__Networks__0__Chain: ${BLOCKCHAIN_0_CHAIN:-Bsc}
-      BlockchainNetworks__Networks__0__Enabled: ${BLOCKCHAIN_0_ENABLED:-false}
-      BlockchainNetworks__Networks__0__HttpRpcUrl: ${BLOCKCHAIN_0_HTTP_RPC_URL:-}
-      BlockchainNetworks__Networks__0__WebSocketRpcUrl: ${BLOCKCHAIN_0_WEB_SOCKET_RPC_URL:-}
-      BlockchainNetworks__Networks__1__Chain: ${BLOCKCHAIN_1_CHAIN:-Base}
-      BlockchainNetworks__Networks__1__Enabled: ${BLOCKCHAIN_1_ENABLED:-false}
-      BlockchainNetworks__Networks__1__HttpRpcUrl: ${BLOCKCHAIN_1_HTTP_RPC_URL:-}
-      BlockchainNetworks__Networks__1__WebSocketRpcUrl: ${BLOCKCHAIN_1_WEB_SOCKET_RPC_URL:-}
-      BlockchainNetworks__Networks__2__Chain: ${BLOCKCHAIN_2_CHAIN:-Arbitrum}
-      BlockchainNetworks__Networks__2__Enabled: ${BLOCKCHAIN_2_ENABLED:-false}
-      BlockchainNetworks__Networks__2__HttpRpcUrl: ${BLOCKCHAIN_2_HTTP_RPC_URL:-}
-      BlockchainNetworks__Networks__2__WebSocketRpcUrl: ${BLOCKCHAIN_2_WEB_SOCKET_RPC_URL:-}
-      BlockchainNetworks__Networks__3__Chain: ${BLOCKCHAIN_3_CHAIN:-Ethereum}
-      BlockchainNetworks__Networks__3__Enabled: ${BLOCKCHAIN_3_ENABLED:-false}
-      BlockchainNetworks__Networks__3__HttpRpcUrl: ${BLOCKCHAIN_3_HTTP_RPC_URL:-}
-      BlockchainNetworks__Networks__3__WebSocketRpcUrl: ${BLOCKCHAIN_3_WEB_SOCKET_RPC_URL:-}
-      BlockchainNetworks__Networks__4__Chain: ${BLOCKCHAIN_4_CHAIN:-Robinhood}
-      BlockchainNetworks__Networks__4__Enabled: ${BLOCKCHAIN_4_ENABLED:-false}
-      BlockchainNetworks__Networks__4__HttpRpcUrl: ${BLOCKCHAIN_4_HTTP_RPC_URL:-}
-      BlockchainNetworks__Networks__4__WebSocketRpcUrl: ${BLOCKCHAIN_4_WEB_SOCKET_RPC_URL:-}
-      Hyperliquid__Enabled: ${HYPERLIQUID_ENABLED:-false}
-      Hyperliquid__WebSocketUrl: ${HYPERLIQUID_WEB_SOCKET_URL:-wss://api.hyperliquid.xyz/ws}
-      Hyperliquid__InfoUrl: ${HYPERLIQUID_INFO_URL:-https://api.hyperliquid.xyz/info}
-      Hyperliquid__MaxUniqueWallets: ${HYPERLIQUID_MAX_UNIQUE_WALLETS:-10}
-      Hyperliquid__PingSeconds: ${HYPERLIQUID_PING_SECONDS:-20}
-      Hyperliquid__PongTimeoutSeconds: ${HYPERLIQUID_PONG_TIMEOUT_SECONDS:-40}
-      Hyperliquid__MaximumFrameBytes: ${HYPERLIQUID_MAXIMUM_FRAME_BYTES:-2097152}
-      Hyperliquid__QueueCapacity: ${HYPERLIQUID_QUEUE_CAPACITY:-128}
-      Hyperliquid__MaximumRecoveryPages: ${HYPERLIQUID_MAXIMUM_RECOVERY_PAGES:-8}
-      Hyperliquid__RecoveryHours: ${HYPERLIQUID_RECOVERY_HOURS:-24}
-      Hyperliquid__RetentionDays: ${HYPERLIQUID_RETENTION_DAYS:-7}
-      Hyperliquid__AggregationMilliseconds: ${HYPERLIQUID_AGGREGATION_MILLISECONDS:-1000}
-      EnsReverseLookup__Enabled: ${ENS_REVERSE_LOOKUP_ENABLED:-true}
-      EnsReverseLookup__Timeout: ${ENS_REVERSE_LOOKUP_TIMEOUT:-00:00:02}
+      DOTNET_ENVIRONMENT: Production
+    volumes:
+      - type: bind
+        source: ./src/Presentation.Telegram/appsettings.Local.json
+        target: /app/appsettings.Local.json
+        read_only: true
+        bind:
+          create_host_path: false
     restart: unless-stopped

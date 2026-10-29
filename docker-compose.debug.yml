@@ -5,4 +5,5 @@ services:
       args:
         BUILD_CONFIGURATION: Debug
     environment:
+      ASPNETCORE_ENVIRONMENT: Development
       DOTNET_ENVIRONMENT: Development

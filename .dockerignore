@@ -14,3 +14,7 @@ data/address-labels/raw/
 data/address-labels/generated/
 *.user
 *.suo
+
+**/appsettings.Local.json
+appsettings.Local.json
+artifacts/
