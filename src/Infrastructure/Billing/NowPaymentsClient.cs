@@ -102,8 +102,10 @@ public sealed class NowPaymentsClient(HttpClient http, IOptions<BillingOptions> 
         {
             using var minimum = await SendAsync(new(HttpMethod.Get, "min-amount?currency_from=usdtbsc&currency_to=usdtbsc"), ct);
             using var quote = await SendAsync(new(HttpMethod.Get, "estimate?amount=" + purchase.UsdPrice.ToString(CultureInfo.InvariantCulture) + "&currency_from=usd&currency_to=usdtbsc"), ct);
-            var estimated = quote.RootElement.GetProperty("estimated_amount").GetDecimal();
-            if (estimated < minimum.RootElement.GetProperty("min_amount").GetDecimal()) return attempt;
+            var estimated = Amount(quote.RootElement.GetProperty("estimated_amount"));
+            var required = Amount(minimum.RootElement.GetProperty("min_amount"));
+            if (estimated <= 0 || required <= 0 || estimated < required)
+            { await db.Entry(attempt).ReloadAsync(ct); return attempt; }
             using var invoice = await SendAsync(new(HttpMethod.Post, "invoice") { Content = JsonContent.Create(new
             { price_amount = purchase.UsdPrice, price_currency = "usd", pay_currency = BillingPlans.UsdtBsc, order_id = order.ToString("N"), ipn_callback_url = options.Value.CallbackUrl, is_fee_paid_by_user = false }) }, ct);
             await db.Entry(attempt).ReloadAsync(ct);
@@ -157,54 +159,54 @@ public sealed class NowPaymentsClient(HttpClient http, IOptions<BillingOptions> 
         {
             inbox.State = BillingStates.Review; inbox.RetryAt = clock.GetUtcNow().AddMinutes(15); await db.SaveChangesAsync(ct); return;
         }
-        if (orderId != attempt.OrderId.ToString("N") || attempt.ExternalId is not null && attempt.ExternalId != id)
+        if (orderId != attempt.OrderId.ToString("N"))
         {
-            var observedAmount = p.TryGetProperty("actually_paid", out var observedPaid) && observedPaid.ValueKind != JsonValueKind.Null ? Amount(observedPaid) : 0m;
-            if (orderId == attempt.OrderId.ToString("N") && p.GetProperty("payment_status").GetString() == "refunded")
-            {
-                // Older ledgers can contain accepted duplicate child charges. Reconcile their
-                // individual reversal without replacing the primary identity or its frozen quote.
-                var original = await db.Set<PaymentReceipt>().AsNoTracking().Where(x => x.Provider == BillingPlans.CryptoProvider
-                    && x.ChargeId == id && x.AttemptId == attempt.Id && !x.Reversal
-                    && (x.State == BillingStates.Applied || x.State == BillingStates.DuplicatePayment))
-                    .OrderByDescending(x => x.State == BillingStates.Applied).ThenBy(x => x.ReceivedAt).FirstOrDefaultAsync(ct);
-                var purchase = await db.Set<PurchaseOrder>().AsNoTracking().SingleAsync(x => x.Id == attempt.OrderId, ct);
-                var quote = Amount(p.GetProperty("pay_amount"));
-                var validRefund = original is not null && p.GetProperty("pay_currency").GetString() == BillingPlans.UsdtBsc
-                    && quote > 0 && attempt.ExpectedAmount == quote && p.GetProperty("price_currency").GetString() == "usd"
-                    && Amount(p.GetProperty("price_amount")) == purchase.UsdPrice
-                    && (!p.TryGetProperty("network", out var childNetwork) || childNetwork.ValueKind == JsonValueKind.Null
-                        || string.Equals(childNetwork.GetString(), "bsc", StringComparison.OrdinalIgnoreCase));
-                await billing.ReceiveAsync(new(BillingPlans.CryptoProvider, BillingKeys.Refund(id), id, attempt.Id, null,
-                    p.GetProperty("pay_currency").GetString()!, original?.Amount ?? observedAmount, Reversal: true,
-                    Evidence: BillingDiagnostics.AuthenticatedStatus, Verified: validRefund), ct);
-                inbox.State = validRefund ? BillingStates.Processed : BillingStates.Review;
-                inbox.RetryAt = clock.GetUtcNow().AddMinutes(15); await db.SaveChangesAsync(ct); return;
-            }
-            await billing.ReceiveAsync(new(BillingPlans.CryptoProvider, BillingKeys.Settlement(id, observedAmount) + ":review", id,
-                orderId == attempt.OrderId.ToString("N") ? attempt.Id : null, null,
-                p.GetProperty("pay_currency").GetString()!, observedAmount, Evidence: BillingDiagnostics.AuthenticatedStatus, Verified: false), ct);
-            inbox.State = BillingStates.Review; inbox.RetryAt = clock.GetUtcNow().AddMinutes(15); await db.SaveChangesAsync(ct); return;
+            inbox.State = BillingStates.Review; inbox.RetryAt = clock.GetUtcNow().AddMinutes(15);
+            await db.SaveChangesAsync(ct); return;
         }
-        attempt.ExternalId = id;
-        if (attempt.State is BillingStates.AwaitingIdentity or BillingStates.IdentityAttention or BillingStates.ReconciliationNeedsCredentials or BillingStates.CreationUnknown)
-            attempt.State = BillingStates.Pending;
+        var primary = attempt.ExternalId is null || attempt.ExternalId == id;
         var currency = p.GetProperty("pay_currency").GetString()!;
         var order = await db.Set<PurchaseOrder>().AsNoTracking().SingleAsync(x => x.Id == attempt.OrderId, ct);
         var expected = Amount(p.GetProperty("pay_amount"));
         var actual = p.TryGetProperty("actually_paid", out var paid) && paid.ValueKind != JsonValueKind.Null ? Amount(paid) : 0m;
-        // Freeze the first authenticated customer quote; later incompatible quotes require review.
+        // Quotes belong to payment identities: reopening hosted checkout can create a new
+        // payment with its own exchange-rate quote under the same invoice and USD order.
         var networkValid = !p.TryGetProperty("network", out var network) || network.ValueKind == JsonValueKind.Null || network.GetString()?.Equals("bsc", StringComparison.OrdinalIgnoreCase) == true;
-        var valid = currency == BillingPlans.UsdtBsc && networkValid && expected > 0 && (attempt.ExpectedAmount is null || attempt.ExpectedAmount == expected)
+        var valid = currency == BillingPlans.UsdtBsc && networkValid && expected > 0
             && p.GetProperty("price_currency").GetString() == "usd" && Amount(p.GetProperty("price_amount")) == order.UsdPrice;
-        attempt.ExpectedAmount ??= expected;
+        var quoteKey = BillingKeys.Quote(id);
+        var frozenQuote = await db.Set<PaymentReceipt>().SingleOrDefaultAsync(x => x.Provider == BillingPlans.CryptoProvider && x.EventKey == quoteKey, ct);
+        valid &= frozenQuote is null || frozenQuote.AttemptId == attempt.Id && frozenQuote.Currency == currency && frozenQuote.Amount == expected;
+        valid &= !primary || attempt.ExpectedAmount is null || attempt.ExpectedAmount == expected;
+        if (valid && frozenQuote is null)
+        {
+            db.Add(new PaymentReceipt { Id = Guid.NewGuid(), Provider = BillingPlans.CryptoProvider, EventKey = quoteKey,
+                ChargeId = id, AttemptId = attempt.Id, Currency = currency, Amount = expected,
+                State = BillingStates.Processed, Evidence = BillingDiagnostics.AuthenticatedStatus,
+                ReceivedAt = clock.GetUtcNow(), RetryAt = clock.GetUtcNow().AddMinutes(15) });
+        }
+        if (valid && primary)
+        {
+            attempt.ExternalId ??= id;
+            attempt.ExpectedAmount ??= expected;
+            if (attempt.State is BillingStates.AwaitingIdentity or BillingStates.IdentityAttention or BillingStates.ReconciliationNeedsCredentials or BillingStates.CreationUnknown)
+                attempt.State = BillingStates.Pending;
+        }
         var state = p.GetProperty("payment_status").GetString();
         await db.SaveChangesAsync(ct);
         if (state == "finished")
         {
             await billing.ReceiveAsync(new(BillingPlans.CryptoProvider, BillingKeys.Settlement(id, actual), id, attempt.Id, null, currency, actual,
                 Evidence: BillingDiagnostics.AuthenticatedStatus, Verified: valid && actual >= expected), ct);
-            inbox.State = BillingStates.Processed;
+            if (valid && actual >= expected)
+            {
+                // Earlier versions quarantined every sibling under a separate review event key.
+                // Retain that evidence while recording that authenticated recheck resolved it.
+                await db.Set<PaymentReceipt>().Where(x => x.Provider == BillingPlans.CryptoProvider && x.ChargeId == id
+                    && x.AttemptId == attempt.Id && !x.Reversal && x.State == BillingStates.Review)
+                    .ExecuteUpdateAsync(s => s.SetProperty(x => x.State, BillingStates.Processed), ct);
+            }
+            inbox.State = valid && actual >= expected ? BillingStates.Processed : BillingStates.Review;
         }
         else if (state == "refunded")
         {
@@ -212,7 +214,7 @@ public sealed class NowPaymentsClient(HttpClient http, IOptions<BillingOptions> 
                 && (x.State == BillingStates.Applied || x.State == BillingStates.DuplicatePayment)).OrderByDescending(x => x.State == BillingStates.Applied).ThenBy(x => x.ReceivedAt).FirstOrDefaultAsync(ct);
             if (original is not null) await billing.ReceiveAsync(new(BillingPlans.CryptoProvider, BillingKeys.Refund(id), id, attempt.Id, null,
                 currency, original.Amount, Reversal: true, Evidence: BillingDiagnostics.AuthenticatedStatus, Verified: valid), ct);
-            inbox.State = original is null ? BillingStates.Review : BillingStates.Processed;
+            inbox.State = original is null || !valid ? BillingStates.Review : BillingStates.Processed;
         }
         else if (state is "partially_paid" or "failed" or "expired" || !valid) inbox.State = BillingStates.Review;
         else inbox.State = BillingStates.AwaitingProvider;
@@ -246,7 +248,7 @@ public sealed class NowPaymentsClient(HttpClient http, IOptions<BillingOptions> 
         await tx.CommitAsync(ct); return inbox;
     }
 
-    /// <summary>Import authenticated child evidence without replacing the primary or issuing another period.</summary>
+    /// <summary>Import authenticated payment evidence without replacing the primary; normal once-only settlement rules apply.</summary>
     public async Task<bool> ImportAsync(long actor, string payment, string reason, CancellationToken ct)
     {
         using var status = await SendAsync(new(HttpMethod.Get, "payment/" + Uri.EscapeDataString(payment)), ct);

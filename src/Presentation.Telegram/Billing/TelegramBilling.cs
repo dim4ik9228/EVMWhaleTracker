@@ -96,6 +96,19 @@ public sealed class TelegramBilling(IBillingService billing, AppDbContext db, IO
                         messageId: messageId, error: changed.IsFailure ? changed.Error.Description : null);
                 }
             }
+            else if (data.StartsWith(BillingUiTokens.TestCrypto, StringComparison.Ordinal) && Guid.TryParseExact(data[BillingUiTokens.TestCrypto.Length..], "N", out var testOrder))
+            {
+                var purchase = await db.Set<PurchaseOrder>().AsNoTracking().SingleOrDefaultAsync(x => x.Id == testOrder && x.UserId == callback.From.Id && x.Plan == BillingPlans.OperatorTestPlan, ct);
+                if (purchase is null || !options.Value.CanTestCheckout(callback.From.Id) || purchase.Fulfilled || purchase.CheckoutExpiresAt <= DateTimeOffset.UtcNow)
+                    await SendMessageAsync(callback.From.Id, BillingErrors.Unavailable.Description, cancellationToken: ct);
+                else
+                {
+                    var attempt = await crypto.CheckoutAsync(callback.From.Id, testOrder, ct);
+                    await SendMessageAsync(callback.From.Id, BillingText.OperatorTestPrice(purchase) + "\n" +
+                        (attempt.CheckoutUrl is null ? BillingText.CreationUnknown + BillingText.AwaitingVerification(testOrder) : BillingText.CryptoQuote),
+                        attempt.CheckoutUrl is null ? null : new InlineKeyboardMarkup(InlineKeyboardButton.WithUrl(BillingText.OpenCheckout, attempt.CheckoutUrl)), ct);
+                }
+            }
             else if (data.StartsWith(BillingUiTokens.Crypto, StringComparison.Ordinal) && Guid.TryParseExact(data[15..], "N", out var order))
             {
                 if (!options.Value.CryptoSalesEnabled) { await ProAsync(callback.From.Id, messageId, ct); return true; }
@@ -107,9 +120,16 @@ public sealed class TelegramBilling(IBillingService billing, AppDbContext db, IO
         }
         if (update.Message is not { Text: { } text, From: { } from } m) return false;
         var command = text.Split(' ', 2)[0].Split('@')[0];
-        if (command is not (BillingUiTokens.Subscription or BillingUiTokens.Terms or BillingUiTokens.Support or BillingUiTokens.SelectionCommand or BillingUiTokens.Grant or BillingUiTokens.Refund or BillingUiTokens.Preview or BillingUiTokens.Revoke or BillingUiTokens.Attach or BillingUiTokens.Import or BillingUiTokens.Recovery)) return false;
+        if (command is not (BillingUiTokens.TestCheckout or BillingUiTokens.Subscription or BillingUiTokens.Terms or BillingUiTokens.Support or BillingUiTokens.SelectionCommand or BillingUiTokens.Grant or BillingUiTokens.Refund or BillingUiTokens.Preview or BillingUiTokens.Revoke or BillingUiTokens.Attach or BillingUiTokens.Import or BillingUiTokens.Recovery)) return false;
         if (m.Chat.Type != ChatType.Private || m.Chat.Id != from.Id) { await SendMessageAsync(m.Chat.Id, BillingText.PrivateOnly, cancellationToken: ct); return true; }
-        if (command == BillingUiTokens.Subscription) await ShowAsync(from.Id, ct);
+        if (command == BillingUiTokens.TestCheckout)
+        {
+            var result = await billing.CreateOperatorTestOrderAsync(from.Id, ct);
+            if (result.IsFailure) await SendMessageAsync(from.Id, result.Error.Description, cancellationToken: ct);
+            else await SendMessageAsync(from.Id, BillingText.OperatorTestPrice(result.Value) + BillingText.OperatorTestAgreement,
+                new InlineKeyboardMarkup(InlineKeyboardButton.WithCallbackData(BillingText.OperatorTestConfirm, BillingUiTokens.TestCrypto + result.Value.Id.ToString("N"))), ct);
+        }
+        else if (command == BillingUiTokens.Subscription) await ShowAsync(from.Id, ct);
         else if (command == BillingUiTokens.Terms) await SendMessageAsync(from.Id, string.IsNullOrWhiteSpace(options.Value.TermsUrl) ? BillingText.TermsPending : options.Value.TermsUrl, cancellationToken: ct);
         else if (command == BillingUiTokens.Support) await SendMessageAsync(from.Id, BillingText.Support(options.Value.SupportContact), cancellationToken: ct);
         else if (command == BillingUiTokens.SelectionCommand)
@@ -146,12 +166,19 @@ public sealed class TelegramBilling(IBillingService billing, AppDbContext db, IO
         rows.Add([InlineKeyboardButton.WithCallbackData(BillingText.Back, BillingUiTokens.Open)]);
         await ViewAsync(user, messageId, BillingText.ProDetailsText(SalesEnabled), new InlineKeyboardMarkup(rows), ct);
     }
+    /// <summary>Shows money movements and unresolved deposits, keeping transport and quote evidence in the operator ledger.</summary>
+    internal static IQueryable<PaymentReceipt> FinancialReceipts(IQueryable<PaymentReceipt> receipts) => receipts.Where(receipt =>
+        receipt.Amount > 0 && receipt.Currency != ""
+        && (receipt.State == BillingStates.Applied || receipt.State == BillingStates.DuplicatePayment
+            || receipt.State == BillingStates.Review || receipt.State == BillingStates.Reversed
+            || receipt.State == BillingStates.ReversalPending));
+
     private async Task HistoryAsync(long user, int messageId, CancellationToken ct)
     {
-        var receipts = await (from receipt in db.Set<PaymentReceipt>().AsNoTracking()
+        var receipts = await (from receipt in FinancialReceipts(db.Set<PaymentReceipt>().AsNoTracking())
             join attempt in db.Set<PaymentAttempt>() on receipt.AttemptId equals attempt.Id
             join order in db.Set<PurchaseOrder>() on attempt.OrderId equals order.Id
-            where order.UserId == user && receipt.State != BillingStates.Inbox && receipt.State != BillingStates.AwaitingProvider
+            where order.UserId == user
             orderby receipt.ReceivedAt descending select new { receipt.Id, receipt.Provider, receipt.Currency, receipt.Amount, receipt.State }).Take(8).ToListAsync(ct);
         var text = receipts.Count == 0 ? BillingText.NoPayments : BillingText.Receipts(string.Join("\n\n", receipts.Select(x =>
             WebUtility.HtmlEncode(string.Create(CultureInfo.InvariantCulture, $"{x.Provider} {x.Amount} {x.Currency} · {x.State}\nReceipt: {x.Id:N}")))));
@@ -290,6 +317,10 @@ public sealed class TelegramBilling(IBillingService billing, AppDbContext db, IO
 /// <summary>Billing presentation copy, isolated from provider and entitlement rules.</summary>
 public static class BillingText
 {
+    public const string OperatorTestAgreement = "\nReal payment for 30 days of Pro. USDT on BSC only; Stars unavailable. Continue only after confirming the amount.";
+    public const string OperatorTestConfirm = "Confirm real crypto test checkout";
+    public static string OperatorTestPrice(PurchaseOrder order) => "Operator crypto test - USD " + order.UsdPrice.ToString("0.00", CultureInfo.InvariantCulture) + "\nOrder: " + order.Id.ToString("N");
+
     public const string PaymentRejected = "This payment is unavailable or does not match the purchase. Contact /paysupport.";
     public const string PrivateOnly = "Open /subscription in a private chat with this bot.";
     public const string ProTitle = "Pro · 30 days";

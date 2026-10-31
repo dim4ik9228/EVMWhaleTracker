@@ -15,9 +15,11 @@ public static class BillingStates
 /// <summary>Stable receipt identities distinguish notification replay from distinct money movements.</summary>
 public static class BillingKeys
 {
+    public const string QuotePrefix = "quote:";
     public static string Paid(string charge) => "paid:" + charge;
     public static string Refund(string charge) => "refund:" + charge;
     public static string Settlement(string payment, decimal amount) => "settled:" + payment + ":" + amount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    public static string Quote(string payment) => QuotePrefix + payment;
     public static string Discovered(string payment) => "discovered:" + payment;
     public static string Purchase(Guid order) => "purchase:" + order;
     public static string Receipt(Guid receipt) => "receipt:" + receipt;

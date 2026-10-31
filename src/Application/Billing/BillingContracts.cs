@@ -11,6 +11,7 @@ public static class BillingPlans
 {
     public const int FreeWallets = 10, ProWallets = 50, ProHyperliquid = 10, Stars = 1450, DurationHours = 720;
     public const decimal Usd = 29m;
+    public const string OperatorTestPlan = "Pro.OperatorCryptoTest.v1";
     public const string StarsProvider = "Stars", CryptoProvider = "NOWPayments", Xtr = "XTR", UsdtBsc = "usdtbsc";
 }
 
@@ -52,6 +53,8 @@ public interface IBillingService
     Task<BillingSummary> SummaryAsync(long userId, CancellationToken ct);
     Task<Result> SelectAsync(long userId, IReadOnlyCollection<Guid> wallets, Guid? polymarketWallet, long revision, CancellationToken ct);
     Task<Result<PurchaseOrder>> CreateOrderAsync(long userId, bool renewal, CancellationToken ct);
+    /// <summary>Creates an explicitly enabled operator crypto purchase without repricing public orders.</summary>
+    Task<Result<PurchaseOrder>> CreateOperatorTestOrderAsync(long actor, CancellationToken ct) => Task.FromResult(Result<PurchaseOrder>.Failure(BillingErrors.Unavailable));
     Task<Result<PaymentAttempt>> PrepareAttemptAsync(long userId, Guid orderId, string provider, CancellationToken ct);
     Task<Result> PreCheckoutAsync(long userId, Guid attemptId, string currency, long total, CancellationToken ct);
     Task ReceiveAsync(FinancialReceipt receipt, CancellationToken ct);

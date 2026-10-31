@@ -116,27 +116,36 @@ public sealed class BillingService(AppDbContext db, IOptions<BillingOptions> opt
         await RefreshAsync(userId, ct); return Result.Success();
     }
 
-    public async Task<Result<PurchaseOrder>> CreateOrderAsync(long userId, bool renewal, CancellationToken ct)
+    public Task<Result<PurchaseOrder>> CreateOperatorTestOrderAsync(long actor, CancellationToken ct) =>
+        options.Value.CanTestCheckout(actor) ? CreateOrderCoreAsync(actor, true, ct) : Task.FromResult(Result<PurchaseOrder>.Failure(BillingErrors.Unavailable));
+
+    public Task<Result<PurchaseOrder>> CreateOrderAsync(long userId, bool renewal, CancellationToken ct) =>
+        CreateOrderCoreAsync(userId, false, ct);
+
+    private async Task<Result<PurchaseOrder>> CreateOrderCoreAsync(long userId, bool test, CancellationToken ct)
     {
-        if (userId <= 0 || !(options.Value.StarsSalesEnabled || options.Value.CryptoSalesEnabled)) return Result<PurchaseOrder>.Failure(BillingErrors.Unavailable);
+        if (userId <= 0 || (test ? !options.Value.CanTestCheckout(userId) : !(options.Value.StarsSalesEnabled || options.Value.CryptoSalesEnabled))) return Result<PurchaseOrder>.Failure(BillingErrors.Unavailable);
         await using var tx = await db.Database.BeginTransactionAsync(ct); await LockOwnerAsync(db, userId, ct);
         await AccountAsync(userId, ct);
         await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(74230004)", ct); var now = clock.GetUtcNow();
-        var existing = await db.Set<PurchaseOrder>().Where(x => x.UserId == userId && !x.Fulfilled && x.CheckoutExpiresAt > now).OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync(ct);
+        var existing = await db.Set<PurchaseOrder>().Where(x => x.UserId == userId && x.Plan == (test ? BillingPlans.OperatorTestPlan : BillingStates.ProPlan) && (!test || x.UsdPrice == options.Value.TestCheckoutUsdPrice) && !x.Fulfilled && x.CheckoutExpiresAt > now).OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync(ct);
         if (existing is not null) return Result<PurchaseOrder>.Success(existing);
         if (await db.Set<PurchaseOrder>().CountAsync(x => x.UserId == userId && x.CreatedAt > now.AddHours(-1), ct) >= 5
             || await db.Set<PurchaseOrder>().CountAsync(x => x.CreatedAt > now.AddMinutes(-1), ct) >= 100) return Result<PurchaseOrder>.Failure(BillingErrors.Unavailable);
-        var order = new PurchaseOrder { Id = Guid.NewGuid(), UserId = userId, CreatedAt = now, CheckoutExpiresAt = now.AddHours(1) };
+        var order = new PurchaseOrder { Id = Guid.NewGuid(), UserId = userId, Plan = test ? BillingPlans.OperatorTestPlan : BillingStates.ProPlan, UsdPrice = test ? options.Value.TestCheckoutUsdPrice : BillingPlans.Usd, StarsPrice = test ? 0 : BillingPlans.Stars, CreatedAt = now, CheckoutExpiresAt = now.AddHours(1) };
         db.Add(order); await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); return Result<PurchaseOrder>.Success(order);
     }
 
     public async Task<Result<PaymentAttempt>> PrepareAttemptAsync(long userId, Guid orderId, string provider, CancellationToken ct)
     {
-        if (provider != BillingPlans.StarsProvider && provider != BillingPlans.CryptoProvider
-            || provider == BillingPlans.StarsProvider && !options.Value.StarsSalesEnabled || provider == BillingPlans.CryptoProvider && !options.Value.CryptoSalesEnabled) return Result<PaymentAttempt>.Failure(BillingErrors.Unavailable);
+        if (provider != BillingPlans.StarsProvider && provider != BillingPlans.CryptoProvider) return Result<PaymentAttempt>.Failure(BillingErrors.Unavailable);
         await using var tx = await db.Database.BeginTransactionAsync(ct); await LockOwnerAsync(db, userId, ct);
         var order = await db.Set<PurchaseOrder>().SingleOrDefaultAsync(x => x.Id == orderId && x.UserId == userId, ct);
         if (order is null || order.Fulfilled || order.CheckoutExpiresAt <= clock.GetUtcNow()) return Result<PaymentAttempt>.Failure(BillingErrors.InvalidPayment);
+        if (order.Plan == BillingPlans.OperatorTestPlan
+            ? provider != BillingPlans.CryptoProvider || !options.Value.CanTestCheckout(userId)
+            : provider == BillingPlans.StarsProvider ? !options.Value.StarsSalesEnabled : !options.Value.CryptoSalesEnabled)
+            return Result<PaymentAttempt>.Failure(BillingErrors.Unavailable);
         var attempt = await db.Set<PaymentAttempt>().SingleOrDefaultAsync(x => x.OrderId == orderId && x.Provider == provider, ct);
         if (attempt is null)
         {
@@ -153,7 +162,7 @@ public sealed class BillingService(AppDbContext db, IOptions<BillingOptions> opt
         await using var tx = await db.Database.BeginTransactionAsync(ct); await LockOwnerAsync(db, userId, ct);
         var valid = await (from a in db.Set<PaymentAttempt>() join o in db.Set<PurchaseOrder>() on a.OrderId equals o.Id
             where a.Id == attemptId && a.Provider == BillingPlans.StarsProvider && o.UserId == userId && !o.Fulfilled
-                && o.CheckoutExpiresAt > clock.GetUtcNow() && currency == BillingPlans.Xtr && total == o.StarsPrice select a).AnyAsync(ct);
+                && o.Plan != BillingPlans.OperatorTestPlan && o.CheckoutExpiresAt > clock.GetUtcNow() && currency == BillingPlans.Xtr && total == o.StarsPrice select a).AnyAsync(ct);
         return valid && options.Value.StarsSalesEnabled ? Result.Success() : Result.Failure(BillingErrors.InvalidPayment);
     }
 
@@ -172,8 +181,16 @@ public sealed class BillingService(AppDbContext db, IOptions<BillingOptions> opt
             Reversal = input.Reversal, Evidence = input.Evidence.Length > 8192 ? input.Evidence[..8192] : input.Evidence, ReceivedAt = clock.GetUtcNow() };
         if (existingReceipt is null) db.Add(receipt);
         else { receipt.AttemptId = attempt?.Id; receipt.UserId = input.UserId; receipt.Currency = input.Currency; receipt.Amount = input.Amount; }
-        var valid = input.Verified && order is not null && attempt is not null && (input.UserId is null || input.UserId == order.UserId)
-            && input.Currency == attempt.Currency && attempt.ExpectedAmount is { } expected && input.Amount >= expected
+        // Authenticated per-payment quote evidence permits hosted siblings without changing
+        // the attempt's original identity/quote. Legacy receipts retain the attempt fallback.
+        var quoteKey = BillingKeys.Quote(input.ChargeId);
+        var paymentQuote = input.Provider == BillingPlans.CryptoProvider
+            ? await db.Set<PaymentReceipt>().AsNoTracking().SingleOrDefaultAsync(x => x.Provider == input.Provider
+                && x.EventKey == quoteKey && x.ChargeId == input.ChargeId && x.AttemptId == input.AttemptId
+                && x.State == BillingStates.Processed && x.Currency == input.Currency, ct) : null;
+        var expectedAmount = paymentQuote?.Amount ?? attempt?.ExpectedAmount;
+        var valid = input.Verified && order is not null && attempt is not null && (order.Plan != BillingPlans.OperatorTestPlan || input.Provider == BillingPlans.CryptoProvider) && (input.UserId is null || input.UserId == order.UserId)
+            && input.Currency == attempt.Currency && expectedAmount is { } expected && input.Amount >= expected
             && !string.IsNullOrWhiteSpace(input.ChargeId)
             && (input.Provider != BillingPlans.StarsProvider || input.UserId == order.UserId && input.Amount == order.StarsPrice);
         if (input.Reversal)
@@ -184,8 +201,9 @@ public sealed class BillingService(AppDbContext db, IOptions<BillingOptions> opt
             if (valid && original is not null && original.AttemptId == attempt!.Id && original.Amount == input.Amount)
             {
                 if (grant is not null) grant.ReversedAt = clock.GetUtcNow();
-                // A refunded duplicate child has no grant and must not change its winning primary.
-                if (grant is not null || input.Provider != BillingPlans.CryptoProvider || attempt!.ExternalId is null || attempt.ExternalId == input.ChargeId)
+                // The immutable primary identity can itself be a duplicate after a sibling wins.
+                // Only the charge owning a grant can reverse a crypto attempt's paid state.
+                if (grant is not null || input.Provider != BillingPlans.CryptoProvider)
                     attempt!.State = BillingStates.Reversed;
                 receipt.State = BillingStates.Reversed;
                 Notice(order!.UserId, BillingKeys.Receipt(receipt.Id), BillingStates.Reversed);
@@ -207,7 +225,7 @@ public sealed class BillingService(AppDbContext db, IOptions<BillingOptions> opt
         if (order is not null)
         {
             var account = await AccountAsync(order.UserId, ct); account.Revision++;
-            if (receipt.State is BillingStates.Review or BillingStates.DuplicatePayment || receipt.Amount > attempt!.ExpectedAmount) Notice(order.UserId, BillingKeys.Receipt(receipt.Id), BillingStates.PaymentReview);
+            if (receipt.State is BillingStates.Review or BillingStates.DuplicatePayment || receipt.Amount > expectedAmount) Notice(order.UserId, BillingKeys.Receipt(receipt.Id), BillingStates.PaymentReview);
         }
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct);
         if (order is not null) await RefreshAsync(order.UserId, ct);

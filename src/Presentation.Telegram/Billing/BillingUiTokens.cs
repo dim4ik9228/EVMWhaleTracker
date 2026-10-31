@@ -3,6 +3,7 @@ namespace Presentation.Telegram.Billing;
 /// <summary>Billing Telegram command and callback protocol.</summary>
 public static class BillingUiTokens
 {
+    public const string TestCheckout = "/billing_test_checkout", TestCrypto = "billing:testcrypto:";
     public const string Subscription = "/subscription", Terms = "/terms", Support = "/paysupport", SelectionCommand = "/free_selection";
     public const string Grant = "/billing_grant", Refund = "/billing_refund", Revoke = "/billing_revoke", Preview = "/billing_preview", Attach = "/billing_attach", Import = "/billing_import", Recovery = "/billing_recovery";
     public const string Prefix = "billing:", Open = "billing:open", Buy = "billing:buy", Agree = "billing:agree", Selection = "billing:selection", Crypto = "billing:crypto:";

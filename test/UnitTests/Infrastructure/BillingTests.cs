@@ -396,7 +396,7 @@ public sealed partial class BillingTests
         await client.ImportAsync(99, "child-payment", "dashboard evidence", default);
         Assert.Single(await db.Set<AccessGrant>().ToListAsync());
         var childReceipt = await db.Set<PaymentReceipt>().SingleAsync(x => x.ChargeId == "child-payment" && x.Amount == 31m);
-        Assert.Equal(BillingStates.Review, childReceipt.State); Assert.Equal(attempt.Id, childReceipt.AttemptId);
+        Assert.Equal(BillingStates.DuplicatePayment, childReceipt.State); Assert.Equal(attempt.Id, childReceipt.AttemptId);
         Assert.Equal("original-payment", attempt.ExternalId); Assert.Equal(29m, attempt.ExpectedAmount);
         var previousCalls = calls;
         await worker.ReconcileCryptoAsync(provider, default); Assert.Equal(previousCalls, calls); // No hot polling after success.
