@@ -1,0 +1,28 @@
+services:
+  ngrok:
+    image: ngrok/ngrok@sha256:ff3b5c3674432d14a786349908b7bdf28ee56c25662637afcbe7180d471993ef
+    container_name: evmwhaletracker-ngrok
+    command:
+      - http
+      - http://app:8080
+      - --config=/etc/ngrok/agent.yml
+      - --traffic-policy-file=/etc/ngrok/payment-policy.yml
+      - --inspect=false
+      - --log=stdout
+      - --log-format=json
+    ports:
+      - "127.0.0.1:4041:4040"
+    volumes:
+      - type: bind
+        source: ./.docker/ngrok-agent.yml
+        target: /etc/ngrok/agent.yml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./config/ngrok-payment-policy.yml
+        target: /etc/ngrok/payment-policy.yml
+        read_only: true
+        bind:
+          create_host_path: false
+    restart: unless-stopped

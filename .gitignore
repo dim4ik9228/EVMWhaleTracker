@@ -6,6 +6,7 @@
 # dotenv files
 .env
 .docker/postgres-data/
+.docker/ngrok-agent.yml
 
 # User-specific files
 *.rsuser
@@ -487,5 +488,6 @@ data/address-labels/raw/
 data/address-labels/generated/
 
 appsettings.Local.json
+appsettings.BillingSandbox.json
 .env.*
 !.env.example
