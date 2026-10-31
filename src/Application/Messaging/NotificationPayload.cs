@@ -35,7 +35,8 @@ public sealed record AggregatedNotificationPayload(
     string TransactionHash,
     ulong BlockNumber,
     DateTimeOffset BlockTimestampUtc,
-    IReadOnlyList<NotificationTransferLine> Lines, long? EntitlementRevision = null, DateTimeOffset? EntitlementValidUntil = null)
+    IReadOnlyList<NotificationTransferLine> Lines, long? EntitlementRevision = null, DateTimeOffset? EntitlementValidUntil = null,
+    Application.Swaps.VerifiedSwap? Swap = null, Guid? SwapDecisionId = null, Guid? DeliveryLease = null)
 {
     public static AggregatedNotificationPayload FromSingle(NotificationPayload payload)
         => new(

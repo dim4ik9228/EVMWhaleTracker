@@ -3,6 +3,11 @@ namespace Presentation.Telegram.Services;
 /// <summary>Named presentation text and formatting templates for TelegramNotificationRenderer.</summary>
 internal static class TelegramNotificationRendererText
 {
+    public static string Swap(decimal input, string inputSymbol, decimal output, string outputSymbol, string protocol)
+        => $"🔀 Swapped {SwapAmount(input)} {inputSymbol} for {SwapAmount(output)} {outputSymbol} via {protocol}";
+    private static string SwapAmount(decimal amount)
+        => amount.ToString(amount != 0 && decimal.Abs(amount) < 0.00000001m ? "0.############################" : "0.########",
+            System.Globalization.CultureInfo.InvariantCulture);
     public const string Sent = "Sent";
     public const string TxHash = "Tx hash";
     public static string AdditionalTransfers(int count) => $"...and {count} more transfers";

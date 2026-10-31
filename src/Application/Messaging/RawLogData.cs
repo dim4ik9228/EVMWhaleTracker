@@ -7,4 +7,8 @@ public sealed record RawLogData(
     string TransactionHash,
     string ContractAddress,
     IReadOnlyList<string> Topics,
-    string Data);
+    string Data,
+    ulong? LogIndex = null,
+    bool Removed = false,
+    string? BlockHash = null,
+    DateTimeOffset? ObservedAtUtc = null);

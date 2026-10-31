@@ -4,6 +4,7 @@ using Application.Abstractions;
 using Application.Messaging;
 using Domain.ValueObjects;
 using Infrastructure.Blockchain;
+using Infrastructure.Swaps;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Nethereum.JsonRpc.Client;
@@ -104,8 +105,11 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
         }
 
         using var client = new StreamingWebSocketClient(_network.BuildWebSocketRpcUrl());
-        var queue = Channel.CreateUnbounded<FilterLog>(new UnboundedChannelOptions
+        using var connection = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        var connectionToken = connection.Token;
+        var queue = Channel.CreateBounded<FilterLog>(new BoundedChannelOptions(512)
         {
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
             SingleWriter = false,
             AllowSynchronousContinuations = false
@@ -123,7 +127,15 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
                 subscriptions.Add(subscription);
                 observerRegistrations.Add(subscription.GetSubscriptionDataResponsesAsObservable().Subscribe(
                     new ChannelObserver<FilterLog>(
-                        log => queue.Writer.TryWrite(log),
+                        log =>
+                        {
+                            if (!queue.Writer.TryWrite(log))
+                            {
+                                _logger.LogWarning(SwapDiagnostics.IngressGap, _network.Chain);
+                                queue.Writer.TryComplete(new InvalidOperationException(SwapDiagnostics.IngressGap));
+                                connection.Cancel();
+                            }
+                        },
                         exception => queue.Writer.TryComplete(exception),
                         () => { })));
             }
@@ -144,7 +156,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
             var cacheChangeTask = _trackedAddressCache.WaitForChangeAsync(cacheVersion, stoppingToken);
             while (!stoppingToken.IsCancellationRequested)
             {
-                var logAvailableTask = queue.Reader.WaitToReadAsync(stoppingToken).AsTask();
+                var logAvailableTask = queue.Reader.WaitToReadAsync(connectionToken).AsTask();
                 var completedTask = await Task.WhenAny(logAvailableTask, cacheChangeTask);
                 if (completedTask == cacheChangeTask)
                 {
@@ -165,9 +177,12 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
                     {
                         continue;
                     }
+                    // Per-connection dedup is a bounded optimization; durable enrichment identities
+                    // provide replay protection, and removed logs have their own version key.
+                    if (seenLogs.Count > 4096) seenLogs.Clear();
 
                     var block = ToRawBlockData(log);
-                    await _channels.RawBlockDataChannel.Writer.WriteAsync(block, stoppingToken);
+                    await _channels.ForChain(_network.Chain).Writer.WriteAsync(block, connectionToken);
                 }
             }
         }
@@ -217,7 +232,11 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
                     TransactionHash: log.TransactionHash ?? string.Empty,
                     ContractAddress: log.Address ?? string.Empty,
                     Topics: log.Topics?.Select(topic => topic?.ToString() ?? string.Empty).ToArray() ?? Array.Empty<string>(),
-                    Data: log.Data ?? string.Empty)
+                    Data: log.Data ?? string.Empty,
+                    LogIndex: log.LogIndex is null ? null : checked((ulong)log.LogIndex.Value),
+                    Removed: log.Removed,
+                    BlockHash: log.BlockHash,
+                    ObservedAtUtc: DateTimeOffset.UtcNow)
             ]);
 
     private static NewFilterInput ToNethereumFilter(Erc20TransferLogFilter filter)
@@ -230,7 +249,7 @@ public sealed class TokenTransferLogSubscriberWorker : BackgroundService
     {
         var transactionHash = log.TransactionHash ?? string.Empty;
         var logIndex = log.LogIndex?.Value.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
-        return $"{transactionHash}:{logIndex}";
+        return $"{log.BlockHash}:{transactionHash}:{logIndex}:{log.Removed}";
     }
 
     private (IReadOnlyCollection<Domain.ValueObjects.Address> Addresses, long Version) GetStableTrackedAddressSnapshot()

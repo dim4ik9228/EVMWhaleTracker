@@ -55,7 +55,7 @@ public sealed class TelegramNotificationEnricher(IAddressLabelResolver addressLa
             payload.TransactionHash,
             payload.BlockNumber,
             payload.BlockTimestampUtc,
-            lines);
+            lines, payload.Swap);
     }
 
     private async Task<string> ResolveTrackedWalletTextAsync(

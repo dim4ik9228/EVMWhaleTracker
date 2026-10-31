@@ -1,5 +1,6 @@
 using Application.Abstractions;
 using Application.Messaging;
+using Application.Swaps;
 using Domain.Common;
 using Domain.ValueObjects;
 using Infrastructure.Blockchain;
@@ -20,6 +21,7 @@ public sealed class WalletTrackerWorker : BackgroundService
     private readonly IAssetPriceProvider _assetPriceProvider;
     private readonly Erc20TransferLogParser _erc20TransferLogParser;
     private readonly ILogger<WalletTrackerWorker> _logger;
+    private readonly ISwapCandidateIntake? _swaps;
 
     public WalletTrackerWorker(
         OnChainPipelineChannels channels,
@@ -28,7 +30,7 @@ public sealed class WalletTrackerWorker : BackgroundService
         ITokenMetadataProvider tokenMetadataProvider,
         IAssetPriceProvider assetPriceProvider,
         Erc20TransferLogParser erc20TransferLogParser,
-        ILogger<WalletTrackerWorker> logger)
+        ILogger<WalletTrackerWorker> logger, ISwapCandidateIntake? swaps = null)
     {
         ArgumentNullException.ThrowIfNull(channels);
         ArgumentNullException.ThrowIfNull(trackedWalletCache);
@@ -45,11 +47,17 @@ public sealed class WalletTrackerWorker : BackgroundService
         _assetPriceProvider = assetPriceProvider;
         _erc20TransferLogParser = erc20TransferLogParser;
         _logger = logger;
+        _swaps = swaps;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var block in _channels.RawBlockDataChannel.Reader.ReadAllAsync(stoppingToken))
+        using var readers = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        var inputs = Enum.GetValues<SupportedChain>().Where(x => x != SupportedChain.Arc).Select(x => _channels.ForChain(x).Reader)
+            .Append(_channels.RawBlockDataChannel.Reader);
+        var tasks = inputs.Select(async reader =>
+        {
+        await foreach (var block in reader.ReadAllAsync(readers.Token))
         {
             foreach (var transaction in block.Transactions)
             {
@@ -61,6 +69,11 @@ public sealed class WalletTrackerWorker : BackgroundService
                 await ProcessLogMatchAsync(log, block, stoppingToken);
             }
         }
+        }).ToArray();
+        await Task.WhenAny(tasks);
+        readers.Cancel();
+        try { await Task.WhenAll(tasks); }
+        catch (OperationCanceledException) when (readers.IsCancellationRequested) { }
     }
 
     private async Task ProcessNativeTransferAsync(
@@ -162,6 +175,12 @@ public sealed class WalletTrackerWorker : BackgroundService
     /// </summary>
     private async Task ProcessLogMatchAsync(RawLogData log, RawBlockData block, CancellationToken cancellationToken)
     {
+        if (_swaps is not null && (_swaps.IsEnabled(block.Chain) || log.Removed))
+        {
+            await _swaps.ObserveAsync(log, block, cancellationToken);
+            return;
+        }
+        if (log.Removed) return;
         if (!_erc20TransferLogParser.TryParse(log, block.Chain, out var transferLog))
         {
             return;

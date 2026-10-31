@@ -7,6 +7,10 @@ namespace Application.Messaging;
 /// </summary>
 public sealed class OnChainPipelineChannels
 {
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Domain.Common.SupportedChain, Channel<RawBlockData>> _chainInputs = new();
+    /// <summary>Separate bounded source quotas prevent an unavailable enrichment store from blocking other chains.</summary>
+    public Channel<RawBlockData> ForChain(Domain.Common.SupportedChain chain) => _chainInputs.GetOrAdd(chain,
+        _ => Channel.CreateBounded<RawBlockData>(new BoundedChannelOptions(512) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true }));
     public OnChainPipelineChannels(
         int rawBlockBufferCapacity = 512,
         int notificationBufferCapacity = 512,

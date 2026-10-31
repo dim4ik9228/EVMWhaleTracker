@@ -1,7 +1,7 @@
 using Application.Billing;
 using Infrastructure.Billing;
-
-
+using Infrastructure.Swaps;
+using Application.Swaps;
 using Presentation.Telegram.Billing;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -168,6 +168,24 @@ if (enabledBlockchainNetworks.Count > 0)
 {
     builder.Services.AddSingleton<ITokenMetadataProvider, NethereumTokenMetadataProvider>();
     builder.Services.AddHttpClient<IAssetPriceProvider, HttpAssetPriceProvider>();
+    builder.Services.AddOptions<SwapEnrichmentOptions>().Bind(builder.Configuration.GetSection("SwapEnrichment"))
+        .Validate(o => o.IsValid(), SwapDiagnostics.InvalidOptions).ValidateOnStart();
+    builder.Services.AddHttpClient("SwapEvidence", client => client.Timeout = Timeout.InfiniteTimeSpan)
+        .RemoveAllLoggers().ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+    builder.Services.AddSingleton<ITransactionExecutionEvidenceProvider>(sp => new EthereumExecutionEvidenceProvider(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient("SwapEvidence"), enabledBlockchainNetworks,
+        sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<SwapEnrichmentOptions>>(), sp.GetRequiredService<ILogger<EthereumExecutionEvidenceProvider>>()));
+    builder.Services.AddSingleton<SwapDecisionStore>();
+    builder.Services.AddSingleton<ISwapCandidateIntake>(sp => sp.GetRequiredService<SwapDecisionStore>());
+    builder.Services.AddSingleton<ISwapDeliveryGuard>(sp => sp.GetRequiredService<SwapDecisionStore>());
+    builder.Services.AddSingleton<SwapEvidenceCache>();
+    builder.Services.AddSingleton<UniswapV3Classifier>();
+    if (!builder.Configuration.GetValue<bool>("Billing:SandboxMode"))
+    {
+        builder.Services.AddHostedService<SwapEnrichmentWorker>();
+        builder.Services.AddHostedService<SwapOutboxWorker>();
+    }
+
     foreach (var network in enabledBlockchainNetworks)
     {
         builder.Services.AddSingleton<IHostedService>(sp =>
@@ -194,6 +212,9 @@ var botToken = telegramSection[HostConfiguration.BotToken];
 if (!string.IsNullOrWhiteSpace(botToken))
 {
     builder.Services.AddSingleton<ITelegramBotClient>(_ => new TelegramBotClient(botToken));
+    // EVM delivery owns retries so every physical send rechecks current access/settings.
+    builder.Services.AddKeyedSingleton<ITelegramBotClient>(NotificationDispatcherWorker.ClientKey,
+        (_, _) => new TelegramBotClient(new TelegramBotClientOptions(botToken) { RetryCount = 0 }));
     builder.Services.AddSingleton<ITelegramBotUsernameProvider, TelegramBotUsernameProvider>();
     builder.Services.AddSingleton<TelegramCommandUpdateHandler>();
     builder.Services.AddHostedService<TelegramUpdateReceiverWorker>();

@@ -9,6 +9,31 @@ namespace UnitTests.Presentation;
 public sealed class TelegramNotificationRendererTests
 {
     [Theory]
+    [InlineData("0.000000001", "0.0000000000000000000000000001")]
+    [InlineData("0.0000000000000000000000000001", "0.000000001")]
+    public void SwapRetainsTinyNonzeroInputAndOutput(string input, string output)
+    {
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        var notification = CreateSingleLineNotification(chain: SupportedChain.Ethereum) with
+        { Swap = new(new("0xtoken", "TOKEN", decimal.Parse(input, culture)), new(null, "ETH", decimal.Parse(output, culture)), null) };
+        var rendered = CreateRenderer().Render(notification);
+        Assert.Contains($"Swapped {input.Replace(".", "\\.")} TOKEN for {output.Replace(".", "\\.")} ETH", rendered.Text);
+    }
+    [Fact]
+    public void VerifiedSwapUsesOneEscapedTwoSidedLineAndKeepsWalletNavigationAndExplorer()
+    {
+        var notification = CreateSingleLineNotification(chain: SupportedChain.Ethereum) with
+        {
+            Swap = new(new("0xtoken", "ONDO_[x]", 115160.75m), new(null, "ETH", 17.721444m), 123m)
+        };
+        var rendered = CreateRenderer().Render(notification, "FixtureBot");
+        Assert.Contains("Swapped 115160\\.75 ONDO\\_\\[x\\] for 17\\.721444 ETH via Uniswap V3", rendered.Text);
+        Assert.DoesNotContain("Received:", rendered.Text); Assert.DoesNotContain("Sent:", rendered.Text);
+        Assert.Contains("https://etherscan.io/tx/0xtxhash", rendered.Text);
+        Assert.Contains("https://t.me/FixtureBot?start=edit_wallet_", rendered.Text);
+        Assert.DoesNotContain("123", rendered.Text);
+    }
+    [Theory]
     [InlineData(SupportedChain.Robinhood, "RH", "ETH", "https://robinhoodchain.blockscout.com")]
     public void Render_NewChains_UsesTheirLabelsAndExplorer(SupportedChain chain, string label, string symbol, string explorer)
     {

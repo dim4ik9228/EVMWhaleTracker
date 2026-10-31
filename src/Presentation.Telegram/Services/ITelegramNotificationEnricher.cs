@@ -25,7 +25,7 @@ public sealed record EnrichedTelegramNotification(
     string TransactionHash,
     ulong BlockNumber,
     DateTimeOffset BlockTimestampUtc,
-    IReadOnlyList<EnrichedTelegramTransferLine> Lines);
+    IReadOnlyList<EnrichedTelegramTransferLine> Lines, Application.Swaps.VerifiedSwap? Swap = null);
 
 /// <summary>
 /// One transfer line with counterparty display text resolved.

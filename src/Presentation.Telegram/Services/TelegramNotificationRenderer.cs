@@ -36,12 +36,14 @@ public sealed class TelegramNotificationRenderer(IChainMetadataProvider chainMet
 
         var transactionLink = Link(TelegramNotificationRendererText.TxHash, chainMetadata.GetTransactionUrl(notification.TransactionHash));
         var lines = new List<string>();
-        foreach (var line in notification.Lines.Take(MaxRenderedTransferLines))
+        if (notification.Swap is { } swap)
+            lines.Add(EscapeText(TelegramNotificationRendererText.Swap(swap.Input.Amount, swap.Input.Symbol, swap.Output.Amount, swap.Output.Symbol, swap.Protocol)));
+        foreach (var line in notification.Swap is null ? notification.Lines.Take(MaxRenderedTransferLines) : [])
         {
             lines.Add(RenderLine(line, chainMetadata));
         }
 
-        if (notification.Lines.Count > MaxRenderedTransferLines)
+        if (notification.Swap is null && notification.Lines.Count > MaxRenderedTransferLines)
         {
             lines.Add(EscapeText(TelegramNotificationRendererText.AdditionalTransfers(notification.Lines.Count - MaxRenderedTransferLines)));
         }
