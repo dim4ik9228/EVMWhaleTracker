@@ -1,0 +1,43 @@
+services:
+  billing-sandbox-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: EvmWhaleTrackerBillingSandbox
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${BILLING_SANDBOX_DB_PASSWORD:?Export isolated sandbox environment first}
+    volumes:
+      - billing-sandbox-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d EvmWhaleTrackerBillingSandbox"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: "no"
+  billing-sandbox-app:
+    image: evmwhaletracker-billing-sandbox:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: final
+    depends_on:
+      billing-sandbox-db:
+        condition: service_healthy
+    env_file:
+      - path: .env.billing-sandbox
+        required: true
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ASPNETCORE_ENVIRONMENT: BillingSandbox
+      DOTNET_ENVIRONMENT: BillingSandbox
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - type: bind
+        source: ./src/Presentation.Telegram/appsettings.BillingSandbox.json
+        target: /app/appsettings.BillingSandbox.json
+        read_only: true
+        bind:
+          create_host_path: false
+    restart: "no"
+volumes:
+  billing-sandbox-data:

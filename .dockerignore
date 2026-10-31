@@ -17,4 +17,5 @@ data/address-labels/generated/
 
 **/appsettings.Local.json
 appsettings.Local.json
+**/appsettings.BillingSandbox.json
 artifacts/

@@ -70,11 +70,16 @@ public sealed class TelegramUpdateReceiverWorker : BackgroundService
                 try
                 {
                     var checkpoint = await db.Set<BillingCheckpoint>().SingleOrDefaultAsync(x => x.Key == BillingStates.TelegramUpdates, stoppingToken);
-                    if (checkpoint is null) { checkpoint = new() { Key = BillingStates.TelegramUpdates }; db.Add(checkpoint); await db.SaveChangesAsync(stoppingToken); }
+                    if (checkpoint is null) { checkpoint = new() { Key = BillingStates.TelegramUpdates, Offset = scope.ServiceProvider.GetRequiredService<IOptions<BillingOptions>>().Value.SandboxMode ? scope.ServiceProvider.GetRequiredService<IOptions<BillingOptions>>().Value.SandboxInitialTelegramOffset : 0 }; db.Add(checkpoint); await db.SaveChangesAsync(stoppingToken); }
                     while (!stoppingToken.IsCancellationRequested)
                     {
                         var updates = await _telegramBotClient.GetUpdates(offset: checked((int)checkpoint.Offset), limit: 100, timeout: 25,
                             allowedUpdates: [UpdateType.Message, UpdateType.CallbackQuery, UpdateType.PreCheckoutQuery], cancellationToken: stoppingToken);
+                        // Inspect the complete batch before dispatch or checkpoint writes: a later real payment
+                        // must remain pending at Telegram for the normal receiver after sandbox restoration.
+                        if (scope.ServiceProvider.GetRequiredService<IOptions<BillingOptions>>().Value.SandboxMode
+                            && updates.Any(u => u.Message?.SuccessfulPayment is not null || u.Message?.RefundedPayment is not null))
+                            throw new InvalidOperationException(TelegramUpdateReceiverWorkerText.SandboxFinancialUpdatePending);
                         // Pre-checkout has its own priority path and never waits behind command rendering or the alert limiter.
                         foreach (var pre in updates.Where(u => u.PreCheckoutQuery is not null))
                         { try { using var preScope = _scopes.CreateScope(); await preScope.ServiceProvider.GetRequiredService<TelegramBilling>().HandleAsync(pre, stoppingToken); } catch (Exception ex) when (!stoppingToken.IsCancellationRequested) { _logger.LogWarning(ex, BillingDiagnostics.WorkerFailure); } }

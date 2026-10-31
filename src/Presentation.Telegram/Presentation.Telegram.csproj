@@ -17,6 +17,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="appsettings.BillingSandbox.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <Content Update="appsettings.BillingSandbox.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
     <None Update="appsettings.Local.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
     <Content Update="appsettings.Local.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />

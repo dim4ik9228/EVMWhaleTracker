@@ -1,0 +1,22 @@
+{
+  "Billing": {
+    "SandboxMode": true,
+    "SandboxInitialTelegramOffset": 0,
+    "EnforcementEnabled": false,
+    "StarsSalesEnabled": false,
+    "CryptoSalesEnabled": true,
+    "MerchantUsdtBscVerified": true,
+    "OperatorUserIds": [],
+    "SupportContact": "Sandbox test operator; no real payments",
+    "TermsUrl": "https://REPLACE/billing/sandbox/terms",
+    "CallbackUrl": "https://REPLACE/billing/nowpayments/ipn"
+  },
+  "BlockchainNetworks": { "Networks": [
+    { "Enabled": false }, { "Enabled": false }, { "Enabled": false }, { "Enabled": false }, { "Enabled": false }
+  ] },
+  "Hyperliquid": { "Enabled": false },
+  "Polymarket": { "Enabled": false },
+  "PolymarketPolygon": { "Enabled": false },
+  "EnsReverseLookup": { "Enabled": false },
+  "AssetPrices": { "Enabled": false }
+}

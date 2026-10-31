@@ -20,14 +20,24 @@ namespace Presentation.Telegram.Billing;
 public sealed class TelegramBilling(IBillingService billing, AppDbContext db, IOptions<BillingOptions> options,
     NowPaymentsClient crypto, ITelegramBotClient bot, TelegramGlobalRateLimiter? rateLimiter = null, TelegramBillingAdmin? administration = null, IBillingAdministration? adminService = null)
 {
+    private InlineKeyboardMarkup? SandboxMarkup(InlineKeyboardMarkup? markup)
+    {
+        if (options.Value.SandboxMode && markup is not null)
+            foreach (var button in markup.InlineKeyboard.SelectMany(row => row))
+                if (button.CallbackData is { } data && !data.StartsWith(BillingSandbox.Prefix, StringComparison.Ordinal))
+                    button.CallbackData = BillingSandbox.Prefix + data;
+        return markup;
+    }
     private async Task<Message> SendMessageAsync(long chatId, string text, InlineKeyboardMarkup? replyMarkup = null, CancellationToken cancellationToken = default)
     {
         if (rateLimiter is not null) await rateLimiter.WaitAsync(chatId, cancellationToken);
-        return await bot.SendMessage(chatId, text, replyMarkup: replyMarkup, cancellationToken: cancellationToken);
+        return await bot.SendMessage(chatId, (options.Value.SandboxMode ? BillingSandbox.Label : "") + text, replyMarkup: SandboxMarkup(replyMarkup), cancellationToken: cancellationToken);
     }
     private bool SalesEnabled => options.Value.StarsSalesEnabled || options.Value.CryptoSalesEnabled;
     private async Task ViewAsync(long user, int? messageId, string text, InlineKeyboardMarkup markup, CancellationToken ct)
     {
+        if (options.Value.SandboxMode) text = BillingSandbox.Label + text;
+        markup = SandboxMarkup(markup)!;
         if (rateLimiter is not null) await rateLimiter.WaitAsync(user, ct);
         if (messageId is null) await bot.SendMessage(user, text, parseMode: ParseMode.Html, replyMarkup: markup, cancellationToken: ct);
         else
@@ -39,7 +49,48 @@ public sealed class TelegramBilling(IBillingService billing, AppDbContext db, IO
     private static InlineKeyboardMarkup BackMarkup() => new(InlineKeyboardButton.WithCallbackData(BillingText.Back, BillingUiTokens.Open));
     public async Task<bool> HandleAsync(Update update, CancellationToken ct)
     {
-        if (administration is not null && await administration.HandleAsync(update, ct)) return true;
+        var sandboxCallback = update.CallbackQuery?.Data?.StartsWith(BillingSandbox.Prefix, StringComparison.Ordinal) == true;
+        var sandboxCommand = update.Message?.Text?.StartsWith("/sandbox", StringComparison.Ordinal) == true;
+        if (!options.Value.SandboxMode && (sandboxCallback || sandboxCommand)) return true;
+        if (options.Value.SandboxMode)
+        {
+            // Consume every non-test update: none can reach billing administration or pending wallet input.
+            var actor = update.CallbackQuery?.From.Id ?? update.Message?.From?.Id;
+            var chat = update.CallbackQuery?.Message?.Chat ?? update.Message?.Chat;
+            if (actor is null || chat?.Type != ChatType.Private || chat.Id != actor || !options.Value.IsOperator(actor.Value)) return true;
+            if (sandboxCallback)
+            {
+                update.CallbackQuery!.Data = update.CallbackQuery.Data![BillingSandbox.Prefix.Length..];
+                if (!update.CallbackQuery.Data.StartsWith(BillingUiTokens.Prefix, StringComparison.Ordinal)
+                    && !update.CallbackQuery.Data.StartsWith(BillingUiTokens.CompactPrefix, StringComparison.Ordinal)) return true;
+            }
+            else if (sandboxCommand)
+            {
+                var parts = update.Message!.Text!.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var sandboxAction = parts[0].Split('@')[0];
+                if (sandboxAction == "/sandboxsimulate")
+                {
+                    var ok = parts.Length == 3 && Guid.TryParse(parts[1], out var order)
+                        && await crypto.SimulateAsync(actor.Value, order, parts[2], ct);
+                    await SendMessageAsync(actor.Value, ok ? "Provider simulation requested; authenticated status verification remains required." : "Use /sandboxsimulate <order-id> <success|failed|partially_paid> for your sandbox invoice.", cancellationToken: ct);
+                    return true;
+                }
+                var mapped = sandboxAction switch
+                {
+                    "/sandboxsubscription" => BillingUiTokens.Subscription,
+                    "/sandboxterms" => BillingUiTokens.Terms,
+                    "/sandboxsupport" => BillingUiTokens.Support,
+                    "/sandboxrecovery" => BillingUiTokens.Recovery,
+                    "/sandboximport" => BillingUiTokens.Import,
+                    "/sandboxattach" => BillingUiTokens.Attach,
+                    _ => null
+                };
+                if (mapped is null) return true;
+                update.Message.Text = mapped + (parts.Length > 1 ? " " + string.Join(' ', parts.Skip(1)) : "");
+            }
+            else return true;
+        }
+        if (!options.Value.SandboxMode && administration is not null && await administration.HandleAsync(update, ct)) return true;
         if (update.PreCheckoutQuery is { } q)
         {
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(TimeSpan.FromSeconds(7));
@@ -113,6 +164,7 @@ public sealed class TelegramBilling(IBillingService billing, AppDbContext db, IO
             {
                 if (!options.Value.CryptoSalesEnabled) { await ProAsync(callback.From.Id, messageId, ct); return true; }
                 var attempt = await crypto.CheckoutAsync(callback.From.Id, order, ct);
+                if (options.Value.SandboxMode && !NowPaymentsClient.IsSandboxCheckoutUrl(attempt.CheckoutUrl)) attempt.CheckoutUrl = null;
                 await SendMessageAsync(callback.From.Id, attempt.CheckoutUrl is null ? BillingText.CreationUnknown + BillingText.AwaitingVerification(order) : BillingText.CryptoQuote,
                     replyMarkup: attempt.CheckoutUrl is null ? null : new InlineKeyboardMarkup(InlineKeyboardButton.WithUrl(BillingText.OpenCheckout, attempt.CheckoutUrl)), cancellationToken: ct);
             }
@@ -156,7 +208,7 @@ public sealed class TelegramBilling(IBillingService billing, AppDbContext db, IO
             new[] { InlineKeyboardButton.WithCallbackData(BillingText.ProDetails, BillingUiTokens.Pro), InlineKeyboardButton.WithCallbackData(BillingText.Payments, BillingUiTokens.History) },
             new[] { InlineKeyboardButton.WithCallbackData(BillingText.HelpTitle, BillingUiTokens.Help) }
         };
-        if (options.Value.IsOperator(user)) rows.Add([InlineKeyboardButton.WithCallbackData(AdminText.Menu, AdminUiTokens.Open)]);
+        if (!options.Value.SandboxMode && options.Value.IsOperator(user)) rows.Add([InlineKeyboardButton.WithCallbackData(AdminText.Menu, AdminUiTokens.Open)]);
         await ViewAsync(user, messageId, BillingText.Summary(s), new InlineKeyboardMarkup(rows), ct);
     }
     private async Task ProAsync(long user, int messageId, CancellationToken ct)

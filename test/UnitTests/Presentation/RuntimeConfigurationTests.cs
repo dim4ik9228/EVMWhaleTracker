@@ -6,6 +6,35 @@ namespace UnitTests.Presentation;
 
 public sealed class RuntimeConfigurationTests
 {
+    [Fact]
+    public void SandboxIgnoresNormalLocalSettingsAndUserSecrets()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            File.WriteAllText(Path.Combine(root, "appsettings.json"), """{"Billing":{"SandboxMode":false}}""");
+            File.WriteAllText(Path.Combine(root, "appsettings.BillingSandbox.json"),
+                """{"Billing":{"SandboxMode":true,"NowPaymentsApiKey":"sandbox-fixture"},"Hyperliquid":{"Enabled":false}}""");
+            File.WriteAllText(Path.Combine(root, "appsettings.Local.json"),
+                """{"Billing":{"SandboxMode":false},"Hyperliquid":{"Enabled":true}}""");
+            using var config = new ConfigurationManager();
+            RuntimeConfiguration.Configure(config, root, "BillingSandbox", ["--Billing:NowPaymentsApiKey=explicit-sandbox-fixture"],
+                new Dictionary<string, string?>
+                {
+                    ["Billing:NowPaymentsApiKey"] = "normal-fixture",
+                    ["ConnectionStrings:Default"] = "Host=normal;Database=Normal",
+                    ["BlockchainNetworks:RpcApiKey"] = "normal-rpc-fixture"
+                });
+            Assert.True(config.GetValue<bool>("Billing:SandboxMode"));
+            Assert.False(config.GetValue<bool>("Hyperliquid:Enabled"));
+            Assert.Equal("explicit-sandbox-fixture", config["Billing:NowPaymentsApiKey"]);
+            Assert.Null(config["ConnectionStrings:Default"]);
+            Assert.Null(config["BlockchainNetworks:RpcApiKey"]);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     [Theory]
     [InlineData("Production", "Information")]
     [InlineData("Development", "Debug")]

@@ -5,6 +5,7 @@ namespace Presentation.Telegram.Configuration;
 /// <summary>Loads settings, filtered credentials, and explicit overrides in precedence order.</summary>
 public static class RuntimeConfiguration
 {
+    public const string BillingSandboxEnvironment = "BillingSandbox";
     /// <summary>Identifies credential settings, including confidential endpoint overrides.</summary>
     public static bool IsSecretKey(string key) =>
         key.Equals("TelegramBot:BotToken", StringComparison.OrdinalIgnoreCase)
@@ -36,6 +37,11 @@ public static class RuntimeConfiguration
     public static void Configure<T>(ConfigurationManager configuration, string root, string environment, string[] args)
         where T : class
     {
+        if (environment.Equals(BillingSandboxEnvironment, StringComparison.OrdinalIgnoreCase))
+        {
+            Configure(configuration, root, environment, args, []);
+            return;
+        }
         var secrets = new ConfigurationBuilder().AddUserSecrets<T>(optional: true).Build();
         Configure(configuration, root, environment, args, secrets.AsEnumerable());
     }
@@ -44,13 +50,15 @@ public static class RuntimeConfiguration
     public static void Configure(ConfigurationManager configuration, string root, string environment, string[] args,
         IEnumerable<KeyValuePair<string, string?>> secrets)
     {
-        var filtered = secrets.Where(p => (IsSecretKey(p.Key) || IsConfidentialEndpoint(p.Key, p.Value))
+        var sandbox = environment.Equals(BillingSandboxEnvironment, StringComparison.OrdinalIgnoreCase);
+        var filtered = (sandbox ? [] : secrets).Where(p => (IsSecretKey(p.Key) || IsConfidentialEndpoint(p.Key, p.Value))
             && !string.IsNullOrWhiteSpace(p.Value)).ToArray();
         configuration.Sources.Clear();
         configuration.SetBasePath(root)
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-            .AddJsonFile($"appsettings.{environment}.json", optional: true, reloadOnChange: true)
-            .AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true)
+            .AddJsonFile($"appsettings.{environment}.json", optional: true, reloadOnChange: true);
+        if (!sandbox) configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+        configuration
             .AddInMemoryCollection(filtered)
             .AddEnvironmentVariables()
             .AddCommandLine(args);

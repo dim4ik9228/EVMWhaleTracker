@@ -1,5 +1,7 @@
 using Application.Billing;
 using Infrastructure.Billing;
+
+
 using Presentation.Telegram.Billing;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -73,6 +75,7 @@ if (string.IsNullOrWhiteSpace(connectionString))
 }
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+BillingSandbox.Validate(builder.Configuration, connectionString, BlockchainNetworkOptionsResolver.Resolve(builder.Configuration).Count, builder.Environment.EnvironmentName);
 builder.Services.AddScoped<ITrackedWalletRepository, TrackedWalletRepository>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddOptions<BillingOptions>().Bind(builder.Configuration.GetSection("Billing"))
@@ -82,7 +85,7 @@ builder.Services.AddSingleton<EntitlementPolicy>();
 builder.Services.AddSingleton<IEntitlementPolicy>(sp => sp.GetRequiredService<EntitlementPolicy>());
 builder.Services.AddScoped<BillingService>();
 builder.Services.AddScoped<IBillingService>(sp => sp.GetRequiredService<BillingService>());
-builder.Services.AddHttpClient<NowPaymentsClient>(client => { client.BaseAddress = new Uri("https://api.nowpayments.io/v1/"); client.Timeout = TimeSpan.FromSeconds(15); })
+builder.Services.AddHttpClient<NowPaymentsClient>((services, client) => { client.BaseAddress = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<BillingOptions>>().Value.ProviderBaseAddress; client.Timeout = TimeSpan.FromSeconds(15); })
     .RemoveAllLoggers().ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<TelegramBilling>();
 builder.Services.AddScoped<IBillingAdministration, BillingAdministration>();
@@ -165,7 +168,6 @@ if (enabledBlockchainNetworks.Count > 0)
 {
     builder.Services.AddSingleton<ITokenMetadataProvider, NethereumTokenMetadataProvider>();
     builder.Services.AddHttpClient<IAssetPriceProvider, HttpAssetPriceProvider>();
-
     foreach (var network in enabledBlockchainNetworks)
     {
         builder.Services.AddSingleton<IHostedService>(sp =>
@@ -249,6 +251,8 @@ app.MapPost("/billing/nowpayments/ipn", async (HttpRequest request, AppDbContext
     }
     await tx.CommitAsync(ct); return Results.Ok();
 });
+app.MapGet("/billing/sandbox/terms", (Microsoft.Extensions.Options.IOptions<BillingOptions> options) =>
+    options.Value.SandboxMode ? Results.Text(BillingSandbox.Terms, "text/plain") : Results.NotFound());
 app.MapGet("/health/billing", async (AppDbContext db, CancellationToken ct) =>
 {
     var now = DateTimeOffset.UtcNow;

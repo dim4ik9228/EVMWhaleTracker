@@ -89,6 +89,7 @@ public sealed class NowPaymentsClient(HttpClient http, IOptions<BillingOptions> 
     }
     public async Task<PaymentAttempt> CheckoutAsync(long user, Guid order, CancellationToken ct)
     {
+        if (options.Value.SandboxMode && !options.Value.IsOperator(user)) throw new InvalidOperationException(BillingDiagnostics.Attention);
         var prepared = await billing.PrepareAttemptAsync(user, order, BillingPlans.CryptoProvider, ct);
         if (prepared.IsFailure) throw new InvalidOperationException(prepared.Error.Description);
         var attempt = prepared.Value;
@@ -110,11 +111,34 @@ public sealed class NowPaymentsClient(HttpClient http, IOptions<BillingOptions> 
             { price_amount = purchase.UsdPrice, price_currency = "usd", pay_currency = BillingPlans.UsdtBsc, order_id = order.ToString("N"), ipn_callback_url = options.Value.CallbackUrl, is_fee_paid_by_user = false }) }, ct);
             await db.Entry(attempt).ReloadAsync(ct);
             attempt.InvoiceId = invoice.RootElement.GetProperty("id").ToString();
-            attempt.CheckoutUrl = invoice.RootElement.GetProperty("invoice_url").GetString(); attempt.State = BillingStates.Pending;
+            var checkout = invoice.RootElement.GetProperty("invoice_url").GetString();
+            attempt.CheckoutUrl = !options.Value.SandboxMode || IsSandboxCheckoutUrl(checkout) ? checkout : null;
+            attempt.State = BillingStates.Pending;
             await db.SaveChangesAsync(ct);
         }
         catch (Exception) when (!ct.IsCancellationRequested) { await db.Entry(attempt).ReloadAsync(ct); }
         return attempt;
+    }
+
+    /// <summary>Rejects stale production URLs returned by the unmaintained sandbox.</summary>
+    public static bool IsSandboxCheckoutUrl(string? value) => Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && uri.Scheme == "https" && uri.Host.Equals("sandbox.nowpayments.io", StringComparison.OrdinalIgnoreCase)
+        && uri.IsDefaultPort && uri.UserInfo.Length == 0;
+
+    /// <summary>Creates only provider-simulated child payments; settlement still requires authenticated status verification.</summary>
+    public async Task<bool> SimulateAsync(long actor, Guid order, string scenario, CancellationToken ct)
+    {
+        if (!options.Value.SandboxMode || !options.Value.IsOperator(actor)
+            || scenario is not ("success" or "failed" or "partially_paid")) return false;
+        var attempt = await (from a in db.Set<PaymentAttempt>() join o in db.Set<PurchaseOrder>() on a.OrderId equals o.Id
+            where o.Id == order && o.UserId == actor && a.Provider == BillingPlans.CryptoProvider select a).SingleOrDefaultAsync(ct);
+        if (attempt?.InvoiceId is null || attempt.ExternalId is not null) return false;
+        using var simulated = await SendAsync(new(HttpMethod.Post, "invoice-payment") { Content = JsonContent.Create(new
+        { iid = attempt.InvoiceId, pay_currency = BillingPlans.UsdtBsc, @case = scenario }) }, ct);
+        // Do not bind a simulator response directly. Polling verifies invoice/order/currency/quote as usual.
+        if (!simulated.RootElement.TryGetProperty("payment_id", out var id)) return false;
+        await PollAsync(id.ToString(), ct);
+        return true;
     }
 
     public async Task ProcessInboxAsync(PaymentReceipt inbox, CancellationToken ct)

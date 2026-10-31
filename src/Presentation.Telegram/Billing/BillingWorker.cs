@@ -34,14 +34,16 @@ public sealed class BillingWorker(IServiceScopeFactory scopes, ILogger<BillingWo
                 var bot = scope.ServiceProvider.GetService<ITelegramBotClient>();
                 if (bot is not null)
                 {
-                    await ReconcileStarsAsync(scope.ServiceProvider, bot, ct);
+                    var sandbox = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<BillingOptions>>().Value;
+                    if (!sandbox.SandboxMode) await ReconcileStarsAsync(scope.ServiceProvider, bot, ct);
                     var notices = await db.Set<BillingOutbox>().Where(x => x.SentAt == null && x.RetryAt <= now).OrderBy(x => x.CreatedAt).Take(10).ToListAsync(ct);
                     foreach (var notice in notices)
                     {
+                        if (sandbox.SandboxMode && !sandbox.IsOperator(notice.UserId)) continue;
                         try
                         {
                             await scope.ServiceProvider.GetRequiredService<TelegramGlobalRateLimiter>().WaitAsync(notice.UserId, ct);
-                            await bot.SendMessage(notice.UserId, BillingNoticeText.For(notice.Kind), cancellationToken: ct); notice.SentAt = clock.GetUtcNow();
+                            await bot.SendMessage(notice.UserId, (sandbox.SandboxMode ? BillingSandbox.Label : "") + BillingNoticeText.For(notice.Kind), cancellationToken: ct); notice.SentAt = clock.GetUtcNow();
                         }
                         catch (Exception) when (!ct.IsCancellationRequested) { notice.Attempts++; notice.RetryAt = now.AddMinutes(Math.Min(1440, Math.Pow(2, Math.Min(notice.Attempts, 10)))); }
                         await db.SaveChangesAsync(ct);
