@@ -5,12 +5,14 @@ using Domain.Entities;
 
 namespace Infrastructure.AddressLabels;
 
+/// <summary>Predicted or applied upserts; disabled chain overrides are counted separately.</summary>
 public sealed record AddressLabelImportReport(
     int Inserted,
     int Updated,
     int Skipped,
     int Invalid,
-    IReadOnlyList<string> Messages);
+    IReadOnlyList<string> Messages,
+    int DisabledScoped = 0);
 
 /// <summary>
 /// Imports reviewed address labels from the repository JSON seed format.
@@ -27,7 +29,8 @@ public sealed class AddressLabelSeedImporter(
         string path,
         bool dryRun,
         bool allowCandidate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preferGlobalExchanges = false)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -59,9 +62,14 @@ public sealed class AddressLabelSeedImporter(
         var invalid = 0;
         var messages = new List<string>();
         var rowNumber = 0;
+        var authoritativeAddresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var scopedLabels = preferGlobalExchanges
+            ? (await repository.GetEnabledAsync(cancellationToken)).Where(label => label.Chain is not null).ToArray()
+            : [];
 
         foreach (var row in entriesResult.Value.EnumerateArray())
         {
+            cancellationToken.ThrowIfCancellationRequested();
             rowNumber++;
             var labelResult = CreateLabel(row);
             if (labelResult.IsFailure)
@@ -72,6 +80,11 @@ public sealed class AddressLabelSeedImporter(
             }
 
             var label = labelResult.Value;
+            if (preferGlobalExchanges && label.IsEnabled && label.Chain is null &&
+                label.Kind is AddressLabelKind.Exchange or AddressLabelKind.ExchangeHotWallet or AddressLabelKind.ExchangeColdWallet)
+            {
+                authoritativeAddresses.Add(label.Address.ToString());
+            }
             var existing = await repository.GetByAddressAndChainAsync(label.Address, label.Chain, cancellationToken);
             if (!dryRun)
             {
@@ -88,6 +101,21 @@ public sealed class AddressLabelSeedImporter(
             }
         }
 
+        var disabledScoped = 0;
+        foreach (var scoped in scopedLabels.Where(label => authoritativeAddresses.Contains(label.Address.ToString())))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!dryRun)
+            {
+                if (!await repository.DisableByIdAsync(scoped.Id, cancellationToken))
+                {
+                    continue;
+                }
+            }
+
+            disabledScoped++;
+        }
+
         if (!dryRun)
         {
             await repository.SaveChangesAsync(cancellationToken);
@@ -95,7 +123,7 @@ public sealed class AddressLabelSeedImporter(
             cache.ReplaceAll(labels);
         }
 
-        return new AddressLabelImportReport(inserted, updated, skipped, invalid, messages);
+        return new AddressLabelImportReport(inserted, updated, skipped, invalid, messages, disabledScoped);
     }
 
     private static Result<JsonElement> ValidateAndGetEntries(JsonElement root, bool allowCandidate)
@@ -193,7 +221,9 @@ public sealed class AddressLabelSeedImporter(
             parsedChain,
             label,
             kind,
-            AddressLabelSource.SeedFile,
+            string.Equals(GetOptionalString(row, "source"), "dune", StringComparison.OrdinalIgnoreCase)
+                ? AddressLabelSource.Dune
+                : AddressLabelSource.SeedFile,
             sourceReference,
             priority,
             isEnabled);
@@ -246,6 +276,12 @@ public sealed class AddressLabelSeedImporter(
 
     private static bool TryGetProperty(JsonElement row, string propertyName, out JsonElement property)
     {
+        property = default;
+        if (row.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
         if (row.TryGetProperty(propertyName, out property))
         {
             return true;

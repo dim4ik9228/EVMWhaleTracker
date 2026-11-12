@@ -1,4 +1,5 @@
 #!/usr/bin/env dotnet run
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -57,11 +58,15 @@ internal sealed record ImportOptions(
         var rawDirectory = "data/address-labels/raw";
         var includedKinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var reviewStatus = ImportReviewStates.Candidate;
+        var format = ImportFormats.Explorer;
 
         for (var index = 0; index < args.Length; index++)
         {
             switch (args[index])
             {
+                case ImportArguments.Format:
+                    format = RequireValue(args, ref index, ImportArguments.Format).ToLowerInvariant();
+                    break;
                 case ImportArguments.Output:
                     outputPath = RequireValue(args, ref index, ImportArguments.Output);
                     break;
@@ -89,12 +94,24 @@ internal sealed record ImportOptions(
             throw new ArgumentException(ImportDiagnostics.InvalidReviewStatus);
         }
 
+        if (format is not (ImportFormats.Explorer or ImportFormats.DuneCex))
+        {
+            throw new ArgumentException(ImportDiagnostics.InvalidFormat);
+        }
+
+        if (format == ImportFormats.DuneCex && inputPaths.Count == 0)
+        {
+            throw new ArgumentException(ImportDiagnostics.DuneInputRequired);
+        }
+
         if (inputPaths.Count == 0)
         {
             inputPaths.AddRange(FindRawInputs(rawDirectory));
         }
 
-        var inputs = inputPaths.Select(InputSource.FromPath).ToArray();
+        var inputs = inputPaths.Select(path => format == ImportFormats.DuneCex
+            ? new InputSource(path, null, null, "dune")
+            : InputSource.FromPath(path)).ToArray();
         return new ImportOptions(inputs, outputPath, includedKinds, reviewStatus.ToLowerInvariant());
     }
 
@@ -140,7 +157,7 @@ internal sealed record ImportOptions(
     }
 }
 
-internal sealed record InputSource(string Path, string Chain, int ChainId, string Source)
+internal sealed record InputSource(string Path, string? Chain, int? ChainId, string Source)
 {
     public static InputSource FromPath(string path)
     {
@@ -160,7 +177,9 @@ internal sealed class NameTagExtractor(ImportOptions options)
 {
     private static readonly Regex AddressRegex = new("^0x[0-9a-fA-F]{40}$", RegexOptions.Compiled);
     private readonly Dictionary<string, CandidateEntry> _entries = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly SeedJsonContext DuneJson = new(new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
     private readonly ExtractionStats _stats = new();
+    private readonly Dictionary<string, DateTimeOffset?> _duneDates = new(StringComparer.OrdinalIgnoreCase);
 
     private static readonly HashSet<string> ExcludedLabels = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -314,7 +333,9 @@ internal sealed class NameTagExtractor(ImportOptions options)
                 ExcludedLabels.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
                 LowSignalLabels.Order(StringComparer.OrdinalIgnoreCase).ToArray(),
                 ExcludedNameTagTerms,
-                "Only rows with non-empty nameTag are eligible. Output keeps nameTag as display text and preserves scraped label only as sourceLabel metadata."),
+                options.Inputs[0].Source == "dune"
+                    ? ImportDiagnostics.DuneFilterNotes
+                    : "Only rows with non-empty nameTag are eligible. Output keeps nameTag as display text and preserves scraped label only as sourceLabel metadata."),
             Stats: _stats,
             Entries: _entries.Values
                 .Where(entry => options.IncludedKinds.Count == 0 || options.IncludedKinds.Contains(entry.Kind))
@@ -344,9 +365,71 @@ internal sealed class NameTagExtractor(ImportOptions options)
         foreach (var row in document.RootElement.EnumerateArray())
         {
             _stats.ReadRows++;
-            ProcessRow(input, row);
+            if (input.Source == "dune")
+            {
+                ProcessDuneRow(input, row);
+            }
+            else
+            {
+                ProcessRow(input, row);
+            }
         }
     }
+
+    private void ProcessDuneRow(InputSource input, JsonElement row)
+    {
+        var address = GetString(row, "address");
+        if (address is null || !AddressRegex.IsMatch(address))
+        {
+            _stats.InvalidAddressRows++;
+            return;
+        }
+
+        var distinctName = GetString(row, "distinct_name");
+        var name = (string.IsNullOrWhiteSpace(distinctName) ? GetString(row, "cex_name") : distinctName)?.Trim();
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 64)
+        {
+            _stats.NullNameTagRows++;
+            return;
+        }
+
+        var addedBy = GetString(row, "added_by");
+        var addedDate = GetString(row, "added_date");
+        var reference = JsonSerializer.Serialize(new DuneProvenance(
+            System.IO.Path.GetFileName(input.Path), addedBy, addedDate), DuneJson.DuneProvenance);
+        if (reference.Length > 512)
+        {
+            _stats.ExcludedRows++;
+            return;
+        }
+
+        var candidate = new CandidateEntry(address.ToLowerInvariant(), null, null, name,
+            GetString(row, "cex_name") ?? "unknown", CandidateKind.Exchange.ToString(), "dune", reference, 100, true);
+        var key = $"global:{candidate.Address}";
+        var date = ParseDuneDate(addedDate);
+        if (_entries.ContainsKey(key))
+        {
+            _stats.DuplicateRows++;
+            // A valid newer date wins; equal or absent dates keep the first input/row.
+            if (Nullable.Compare(date, _duneDates[key]) <= 0)
+            {
+                return;
+            }
+        }
+
+        _entries[key] = candidate;
+        _duneDates[key] = date;
+    }
+
+    private static DateTimeOffset? ParseDuneDate(string? value)
+        // Require a complete date: permissive parsing can infer today's date/year.
+        => DateTimeOffset.TryParseExact(value,
+            ["yyyy-MM-dd", "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFK", "yyyy-MM-dd HH:mm:ss.FFFFFFFK",
+             "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF zzz", "yyyy-MM-dd HH:mm:ss.FFFFFFF zzz",
+             "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF' UTC'", "yyyy-MM-dd HH:mm:ss.FFFFFFF' UTC'"],
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var date)
+            ? date : null;
 
     private void ProcessRow(InputSource input, JsonElement row)
     {
@@ -495,7 +578,7 @@ internal sealed class NameTagExtractor(ImportOptions options)
 
     private static string? GetString(JsonElement row, string propertyName)
     {
-        return row.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+        return row.ValueKind == JsonValueKind.Object && row.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
             ? property.GetString()
             : null;
     }
@@ -532,6 +615,9 @@ internal sealed class NameTagExtractor(ImportOptions options)
         return $"https://{host}/address/{address.ToLowerInvariant()}";
     }
 }
+
+/// <summary>Original Dune attribution retained as a compact, non-URL source reference.</summary>
+internal sealed record DuneProvenance(string File, string? AddedBy, string? AddedDate);
 
 internal sealed record ExtractionResult(CandidateSeed Seed, ExtractionStats Stats);
 
@@ -593,11 +679,15 @@ internal enum CandidateKind
     WriteIndented = true,
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(CandidateSeed))]
+[JsonSerializable(typeof(DuneProvenance))]
 internal sealed partial class SeedJsonContext : JsonSerializerContext;
 
 /// <summary>Console and validation text for the standalone import tool.</summary>
 internal static class ImportDiagnostics
 {
+    public const string InvalidFormat = "--format must be explorer or dune-cex.";
+    public const string DuneInputRequired = "--format dune-cex requires at least one explicit --input.";
+    public const string DuneFilterNotes = "Dune CEX rows use distinct_name, falling back to cex_name; labels must fit 64 characters. No explorer noise filters apply. Source references retain filename, added_by and added_date (maximum 512 characters). Duplicates use newest valid UTC added_date, then first input/row on ties or invalid dates.";
     public const string GlobalScope = "Global";
     public static string CountByLabel(string? label, int count) => $"  {label}: {count:N0}";
     public static string Written(int count, string reviewStatus, string path) => $"Wrote {count:N0} {reviewStatus} entries to {path}";
@@ -621,6 +711,7 @@ internal static class ImportDiagnostics
 /// <summary>Supported standalone importer command-line switches.</summary>
 internal static class ImportArguments
 {
+    public const string Format = "--format";
     public const string Output = "--output";
     public const string Input = "--input";
     public const string RawDirectory = "--raw-dir";
@@ -633,4 +724,11 @@ internal static class ImportReviewStates
 {
     public const string Candidate = "candidate";
     public const string Reviewed = "reviewed";
+}
+
+/// <summary>Explicit input schemas; explorer remains the backward-compatible default.</summary>
+internal static class ImportFormats
+{
+    public const string Explorer = "explorer";
+    public const string DuneCex = "dune-cex";
 }

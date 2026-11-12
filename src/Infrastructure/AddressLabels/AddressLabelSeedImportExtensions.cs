@@ -23,11 +23,13 @@ public static class AddressLabelSeedImportExtensions
         var dryRun = args.Any(arg => string.Equals(arg, AddressLabelSeedImportExtensionsDiagnostics.DryRunOption, StringComparison.OrdinalIgnoreCase));
         var allowCandidate = args.Any(arg => string.Equals(arg, AddressLabelSeedImportExtensionsDiagnostics.AllowCandidateOption, StringComparison.OrdinalIgnoreCase));
 
-        var report = await serviceProvider.ImportAddressLabelSeedAsync(path, dryRun, allowCandidate, cancellationToken);
+        var preferGlobalExchanges = args.Any(arg => string.Equals(arg, AddressLabelSeedImportExtensionsDiagnostics.PreferGlobalExchangesOption, StringComparison.OrdinalIgnoreCase));
+        var report = await serviceProvider.ImportAddressLabelSeedAsync(path, dryRun, allowCandidate, cancellationToken, preferGlobalExchanges);
 
         Console.WriteLine(dryRun ? AddressLabelSeedImportExtensionsDiagnostics.AddressLabelImportDryRunComplete : AddressLabelSeedImportExtensionsDiagnostics.AddressLabelImportComplete);
         Console.WriteLine(AddressLabelSeedImportExtensionsDiagnostics.Inserted(report.Inserted));
         Console.WriteLine(AddressLabelSeedImportExtensionsDiagnostics.Updated(report.Updated));
+        Console.WriteLine(AddressLabelSeedImportExtensionsDiagnostics.DisabledScoped(report.DisabledScoped));
         Console.WriteLine(AddressLabelSeedImportExtensionsDiagnostics.Skipped(report.Skipped));
         Console.WriteLine(AddressLabelSeedImportExtensionsDiagnostics.Invalid(report.Invalid));
 
@@ -44,12 +46,13 @@ public static class AddressLabelSeedImportExtensions
         string path,
         bool dryRun,
         bool allowCandidate,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool preferGlobalExchanges = false)
     {
         ArgumentNullException.ThrowIfNull(serviceProvider);
 
         using var scope = serviceProvider.CreateScope();
         var importer = scope.ServiceProvider.GetRequiredService<AddressLabelSeedImporter>();
-        return await importer.ImportAsync(path, dryRun, allowCandidate, cancellationToken);
+        return await importer.ImportAsync(path, dryRun, allowCandidate, cancellationToken, preferGlobalExchanges);
     }
 }

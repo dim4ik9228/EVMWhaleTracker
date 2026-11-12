@@ -18,5 +18,8 @@ public interface IAddressLabelRepository
 
     Task UpsertAsync(AddressLabel label, CancellationToken cancellationToken);
 
+    /// <summary>Disables only the identified enabled row; returns false when missing or already disabled.</summary>
+    Task<bool> DisableByIdAsync(Guid id, CancellationToken cancellationToken);
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

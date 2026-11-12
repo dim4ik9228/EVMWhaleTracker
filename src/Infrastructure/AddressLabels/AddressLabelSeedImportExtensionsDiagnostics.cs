@@ -8,10 +8,12 @@ internal static class AddressLabelSeedImportExtensionsDiagnostics
 
     public static string Inserted(int count) => $"Inserted: {count}";
     public static string Updated(int count) => $"Updated: {count}";
+    public static string DisabledScoped(int count) => $"Disabled chain overrides: {count}";
     public static string Skipped(int count) => $"Skipped: {count}";
     public static string Invalid(int count) => $"Invalid: {count}";
 
-    public const string Usage = "Usage: import-address-labels <json-path> [--dry-run] [--allow-candidate]";
+    public const string Usage = "Usage: import-address-labels <json-path> [--dry-run] [--allow-candidate] [--prefer-global-exchanges]";
+    public const string PreferGlobalExchangesOption = "--prefer-global-exchanges";
     public const string DryRunOption = "--dry-run";
     public const string AllowCandidateOption = "--allow-candidate";
 }

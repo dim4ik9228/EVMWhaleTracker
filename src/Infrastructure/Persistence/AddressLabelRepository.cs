@@ -66,6 +66,14 @@ public sealed class AddressLabelRepository(AppDbContext dbContext) : IAddressLab
         }
     }
 
+    public async Task<bool> DisableByIdAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var existing = await dbContext.AddressLabels
+            .FirstOrDefaultAsync(label => label.Id == id, cancellationToken);
+
+        return existing?.Disable() ?? false;
+    }
+
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken)
         => dbContext.SaveChangesAsync(cancellationToken);
 }

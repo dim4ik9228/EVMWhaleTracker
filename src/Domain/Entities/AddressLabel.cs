@@ -153,6 +153,19 @@ public sealed class AddressLabel
         return Result.Success();
     }
 
+    /// <summary>Disables this row while retaining its identity and all label metadata.</summary>
+    public bool Disable()
+    {
+        if (!IsEnabled)
+        {
+            return false;
+        }
+
+        IsEnabled = false;
+        UpdatedAtUtc = DateTimeOffset.UtcNow;
+        return true;
+    }
+
     private static Result<string> NormalizeLabel(string? label)
     {
         if (string.IsNullOrWhiteSpace(label))

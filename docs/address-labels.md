@@ -95,3 +95,11 @@ Use `reviewStatus: "reviewed"` for files that are safe to import into the normal
 Use `chain: null` for global EOA labels such as exchange wallets. Use a supported chain name, such as `Ethereum`, `Bsc`, `Base`, or `Arbitrum`, for chain-specific infrastructure like bridge contracts. The importer rejects chain-scoped exchange entries and unscoped bridge/router/protocol/treasury entries. The current reviewed scraped nameTag seed intentionally includes only exchanges and bridges.
 
 Prefer curated Dune exports and official protocol deployment documentation. Explorer labels are useful review hints, but the runtime path should not scrape explorer pages.
+
+## Importing Dune CEX exports
+
+Convert the raw arrays offline using the [converter instructions](../tools/address-label-importer/README.md#dune-cex-exports), review the seed, then use the existing `import-address-labels` command. `source: "dune"` persists as `AddressLabelSource.Dune`; absent, explorer or other source strings retain the existing `SeedFile` behavior. Matching `(address, chain)` rows are updated with the incoming label, source, reference, priority and enabled state regardless of the previous priority. Unmatched rows and tracked-wallet aliases are untouched; imports never delete labels.
+
+For an explicitly authoritative global exchange dataset, add `--prefer-global-exchanges` to both the dry-run and applied import. This optional flag disables existing enabled chain-scoped labels at the same addresses as incoming enabled global exchange entries. It retains their IDs, labels, kinds, source metadata and priorities. This lets the global exchange name resolve on those chains. It does not affect other addresses or already disabled rows. Without the flag, chain-specific labels continue to win. The report lists `Disabled chain overrides` separately from `Updated`; dry-run predicts both without changing the database/cache.
+
+Use a reviewed import image compatible with the running database. The general `--build` examples above build the current checkout and run startup migrations; do not use them to accidentally deploy unrelated pending schema or feature work. Back up the database before an authoritative import and compare unmatched rows afterward. An import refreshes its own process cache; an already running bot needs its normal cache hydration/restart to observe the changes.
