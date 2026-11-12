@@ -14,4 +14,5 @@ internal static class PolymarketPolygonRpcDiagnostics
     public const string BlockRange = "block range";
     public const string ResponseSize = "response size";
     public static string ProviderRpcFailure(string method, int code) => $"Polygon {method} rejected (RPC code {code}); recovery remains pending.";
+    public static string ProviderBlockRpcFailure(string target, int code) => $"Polygon eth_getBlockByNumber target {target} rejected (RPC code {code}); recovery remains pending.";
 }

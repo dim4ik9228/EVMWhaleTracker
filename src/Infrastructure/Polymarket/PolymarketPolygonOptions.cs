@@ -4,6 +4,22 @@ namespace Infrastructure.Polymarket;
 /// <summary>Independent default-off acquisition switch and finite Polygon resource budgets.</summary>
 public sealed class PolymarketPolygonOptions
 {
+    internal long CooldownUntilTicks;
+    /// <summary>Extends the shared process cooldown atomically; late throughput failures cannot shorten a daily pause.</summary>
+    internal TimeSpan ExtendCooldown(TimeSpan duration)
+    {
+        var deadline = Environment.TickCount64 + (long)Math.Ceiling(duration.TotalMilliseconds);
+        var current = Interlocked.Read(ref CooldownUntilTicks);
+        while (current < deadline)
+        {
+            var observed = Interlocked.CompareExchange(ref CooldownUntilTicks, deadline, current);
+            if (observed == current) break;
+            current = observed;
+        }
+        return CooldownRemaining;
+    }
+    internal TimeSpan CooldownRemaining => TimeSpan.FromMilliseconds(
+        Math.Max(0, Interlocked.Read(ref CooldownUntilTicks) - Environment.TickCount64));
     public bool Enabled { get; set; }
     public string HttpRpcUrl { get; set; } = "https://polygon-mainnet.infura.io/v3/";
     public string WebSocketRpcUrl { get; set; } = "wss://polygon-mainnet.infura.io/ws/v3/";
@@ -13,12 +29,20 @@ public sealed class PolymarketPolygonOptions
     public string FinalityMode { get; set; } = PolymarketWireTokens.FinalizedMode;
     public int ConfirmationDepth { get; set; } = 128;
     public int MaxUniqueAddresses { get; set; } = 20;
-    public int MaxSubscriptions { get; set; } = 6;
+    public int MaxSubscriptions { get; set; } = 5;
     public int QueueCapacity { get; set; } = 256;
     public int MaximumFrameBytes { get; set; } = 2097152;
     public int MaximumResponseBytes { get; set; } = 4194304;
     public int TimeoutSeconds { get; set; } = 15;
     public int RpcMinimumIntervalMilliseconds { get; set; } = 250;
+    /// <summary>Pending finality/enrichment is retried at this minimum cadence; idle work uses maintenance.</summary>
+    public int PendingRetrySeconds { get; set; } = 2;
+    public int MaintenanceSeconds { get; set; } = 120;
+    public int CoverageAuditSeconds { get; set; } = 300;
+    public int DailySocketMessageLimit { get; set; } = 10000;
+    public int QuotaBackoffSeconds { get; set; } = 3600;
+    /// <summary>Hard process-local HTTP request cap per UTC day; excludes provider-charged socket deliveries.</summary>
+    public int DailyHttpRequestLimit { get; set; } = 12000;
     public int RecoveryBlocks { get; set; } = 43200;
     public int LogRangeBlocks { get; set; } = 1000;
     public int RecoveryRequests { get; set; } = 200;
@@ -34,10 +58,13 @@ public sealed class PolymarketPolygonOptions
         && Families.Length > 0 && Families.All(f => PolymarketContractRegistry.Exchanges.Any(e => e.Family == f))
         && FinalityMode is PolymarketWireTokens.FinalizedMode or PolymarketWireTokens.ConfirmationsMode
         && ConfirmationDepth is >= 16 and <= 1024 && RetainedAncestry >= ConfirmationDepth * 2 && RetainedAncestry <= 4096
-        && MaxUniqueAddresses is >= 1 and <= 100 && MaxSubscriptions is >= 6 and <= 20
+        && MaxUniqueAddresses is >= 1 and <= 100 && MaxSubscriptions is >= 5 and <= 20
         && QueueCapacity is >= 16 and <= 4096 && MaximumFrameBytes is >= 4096 and <= 8388608
         && MaximumResponseBytes is >= 4096 and <= 8388608 && TimeoutSeconds is >= 3 and <= 60
         && RpcMinimumIntervalMilliseconds is >= 100 and <= 5000
+        && PendingRetrySeconds is >= 2 and <= 30 && MaintenanceSeconds is >= 60 and <= 600
+        && CoverageAuditSeconds is >= 300 and <= 3600 && DailySocketMessageLimit is >= 100 and <= 100000
+        && QuotaBackoffSeconds is >= 60 and <= 86400 && DailyHttpRequestLimit is >= 100 and <= 100000
         && RecoveryBlocks is >= 1000 and <= 129600 && LogRangeBlocks is >= 1 and <= 10000
         // A recovery range is atomic across all five log filters; smaller budgets cannot advance it.
         && RecoveryRequests is >= 5 and <= 1000 && RetentionDays is >= 7 and <= 365

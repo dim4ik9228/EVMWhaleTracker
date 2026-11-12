@@ -91,9 +91,18 @@ public sealed class PolymarketPolygonStore(AppDbContext db, IPolymarketPolygonRp
     public async Task<long> NextAsync(string[] sources, CancellationToken ct) => await db.Set<PolymarketCheckpoint>()
         .Where(x => sources.Contains(x.SourceAddress)).MinAsync(x => x.ScanNextBlock, ct) ?? 0;
 
-    public async Task CoveredAsync(string[] sources, PolymarketChainBlock block, CancellationToken ct)
+    public async Task<bool> CoveredAsync(string[] sources, PolymarketChainBlock block, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(74220003)", ct);
+        // Recheck the old proof and the range anchor after all five filter results and the
+        // live queue barrier. A reorg during catch-up must never be hidden by a new cursor.
+        var rewound = await ValidateCoreAsync(sources, ct);
+        if (rewound || (await rpc.BlockAsync(block.Number, ct)).Hash != block.Hash)
+        {
+            await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); db.ChangeTracker.Clear();
+            return false;
+        }
         foreach (var checkpoint in await db.Set<PolymarketCheckpoint>().Where(x => sources.Contains(x.SourceAddress)).ToListAsync(ct))
         {
             if (checkpoint.CoveredBlock > block.Number) continue;
@@ -103,33 +112,63 @@ public sealed class PolymarketPolygonStore(AppDbContext db, IPolymarketPolygonRp
         }
         await RememberBlockAsync(block, ct);
         await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); db.ChangeTracker.Clear();
+        return true;
     }
 
-    public async Task<bool> ValidateAsync(CancellationToken ct)
+    public async Task<bool> ValidateAsync(string[] sources, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(74220003)", ct);
+        var changed = await ValidateCoreAsync(sources, ct);
+        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); db.ChangeTracker.Clear();
+        return changed;
+    }
+
+    private async Task<bool> ValidateCoreAsync(string[] sources, CancellationToken ct)
+    {
+        // Shared followers often have identical checkpoints. Reuse reads only within this
+        // validation pass; every later pass must observe fresh canonical hashes.
+        var blocks = new Dictionary<long, PolymarketChainBlock>();
+        async Task<PolymarketChainBlock> BlockAsync(long number)
+        {
+            if (!blocks.TryGetValue(number, out var block))
+                blocks[number] = block = await rpc.BlockAsync(number, ct);
+            return block;
+        }
         var changed = false;
-        var checkpoints = await db.Set<PolymarketCheckpoint>().Where(x => x.CoveredBlock != null && x.CoveredBlockHash != null).ToListAsync(ct);
+        var checkpoints = await db.Set<PolymarketCheckpoint>().Where(x => sources.Contains(x.SourceAddress) && x.CoveredBlock != null && x.CoveredBlockHash != null).ToListAsync(ct);
         foreach (var checkpoint in checkpoints)
         {
-            var actual = await rpc.BlockAsync(checkpoint.CoveredBlock!.Value, ct);
+            var actual = await BlockAsync(checkpoint.CoveredBlock!.Value);
             if (actual.Hash == checkpoint.CoveredBlockHash) continue;
             changed = true;
             var ancestors = await db.Set<PolymarketBlock>().AsNoTracking().Where(x => x.Number < actual.Number)
                 .OrderByDescending(x => x.Number).Take(options.Value.RetainedAncestry).ToListAsync(ct);
             long? common = null;
             foreach (var candidate in ancestors)
-                if ((await rpc.BlockAsync(candidate.Number, ct)).Hash == candidate.Hash) { common = candidate.Number; break; }
+                if ((await BlockAsync(candidate.Number)).Hash == candidate.Hash) { common = candidate.Number; break; }
             var rewind = common ?? Math.Max(0, actual.Number - options.Value.RecoveryBlocks);
             await OrphanAsync(rewind + 1, null, ct);
             checkpoint.CoveredBlock = rewind;
-            checkpoint.CoveredBlockHash = (await rpc.BlockAsync(rewind, ct)).Hash;
+            checkpoint.CoveredBlockHash = (await BlockAsync(rewind)).Hash;
             checkpoint.ScanNextBlock = rewind + 1;
             checkpoint.Gap = common is null ? PolymarketPolygonStoreDiagnostics.ReorgHistoryUnavailable : checkpoint.Gap;
             checkpoint.Status = RuntimeStates.Checkpoint.Recovering;
         }
-        await db.SaveChangesAsync(ct); await tx.CommitAsync(ct); db.ChangeTracker.Clear(); return changed;
+        return changed;
+    }
+
+    /// <summary>Durable pending work drives fast finality retries without a head subscription.</summary>
+    public async Task<bool> HasPendingAsync(string[] sources, CancellationToken ct)
+    {
+        foreach (var source in sources)
+        {
+            var topic = PolymarketContractRegistry.WalletTopic(source);
+            if (await db.Set<PolymarketRawLog>().AsNoTracking().AnyAsync(x => !x.Removed
+                && (x.DecodeState == RuntimeStates.Normalization.Pending || x.DecodeState == RuntimeStates.Normalization.Enriching)
+                && x.TopicsJson.Contains(topic), ct)) return true;
+        }
+        return false;
     }
 
     public async Task FinalizeAsync(long final, CancellationToken ct)
@@ -143,7 +182,9 @@ public sealed class PolymarketPolygonStore(AppDbContext db, IPolymarketPolygonRp
             foreach (var item in await query.Where(x => x.TopicsJson.Contains(padded)).OrderBy(x => x.BlockNumber).ThenBy(x => x.LogIndex).Take(10).ToListAsync(ct))
                 fair.TryAdd(item.Id, item);
         }
-        foreach (var item in await query.OrderBy(x => x.BlockNumber).ThenBy(x => x.LogIndex).Take(20).ToListAsync(ct)) fair.TryAdd(item.Id, item);
+        // Every supported subscription indexes the followed wallet in a topic. Historical
+        // inactive rows must not consume recurring RPC work for another active source.
+        // The per-source selection above includes lifecycle context as well as executions.
         var pending = fair.Values.OrderBy(x => x.BlockNumber).ThenBy(x => x.LogIndex).ToArray();
         var enrichmentBudget = System.Diagnostics.Stopwatch.StartNew();
         foreach (var raw in pending)

@@ -7,7 +7,7 @@ public sealed record PolymarketChainLog(string Contract, long BlockNumber, strin
     public string Id => $"137:{BlockHash}:{TransactionHash}:{LogIndex}";
 }
 
-/// <summary>Bounded public Polygon reads; historical logs are requested only for explicit recovery windows.</summary>
+/// <summary>Bounded public Polygon reads; historical logs are requested only for explicit recovery and sparse coverage-audit windows.</summary>
 public interface IPolymarketPolygonRpc
 {
     Task<long> HeadAsync(CancellationToken cancellationToken);

@@ -18,16 +18,19 @@ public sealed class PolymarketPolygonWorker(IServiceScopeFactory scopes, IPolyma
     IOptions<PolymarketPolygonOptions> options, IOptions<PolymarketOptions> profileOptions,
     PolymarketPolygonHealth health, ILogger<PolymarketPolygonWorker> logger) : BackgroundService
 {
+    private DateOnly _socketDay;
+    private int _socketMessages;
     private const long OwnerLock = 74220002;
-    private sealed record Frame(PolymarketChainLog? Log = null, long? Head = null, TaskCompletionSource? Barrier = null);
     private sealed record Filter(string[] Address, object?[] Topics);
     private PolymarketPolygonOptions Options => options.Value;
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         if (!Options.Enabled || !profileOptions.Value.Enabled) { health.Status = PolymarketPolygonWorkerDiagnostics.OffPolygonTrackingPaused; return; }
+        var failures = 0;
         while (!ct.IsCancellationRequested)
         {
+            var retry = TimeSpan.FromSeconds(5);
             try
             {
                 using var lease = scopes.CreateScope();
@@ -50,12 +53,25 @@ public sealed class PolymarketPolygonWorker(IServiceScopeFactory scopes, IPolyma
             catch (Exception ex)
             {
                 // Exceptions may contain websocket URLs. Only the exception type is logged.
-                health.Status = PolymarketPolygonWorkerDiagnostics.ConnectionUnavailable;
+                retry = ex is PolymarketProviderQuotaException quota ? quota.RetryAfter
+                    : TimeSpan.FromSeconds(Math.Min(300, 5 * Math.Pow(2, Math.Min(++failures, 6))));
+                if (ex is PolymarketProviderQuotaException)
+                    retry = Options.ExtendCooldown(retry);
+                if (Options.CooldownRemaining > retry) retry = Options.CooldownRemaining;
+                health.Status = ex is PolymarketProviderQuotaException
+                    ? PolymarketPolygonWorkerDiagnostics.QuotaPaused : PolymarketPolygonWorkerDiagnostics.ConnectionUnavailable;
+                logger.LogInformation(PolymarketPolygonWorkerDiagnostics.RetrySummary,
+                    (long)Math.Ceiling(retry.TotalSeconds), DateTimeOffset.UtcNow.Add(retry),
+                    rpc is PolymarketPolygonRpc counted ? counted.RequestCount : 0);
                 var reason = ex is InvalidDataException && ex.Message.StartsWith(PolymarketPolygonWorkerDiagnostics.SafeFailurePrefix, StringComparison.Ordinal)
                     && !ex.Message.Contains("://", StringComparison.Ordinal) ? ex.Message : ex.GetType().Name;
                 logger.LogWarning(PolymarketPolygonWorkerDiagnostics.PolygonSourceReconnectRequired, ex.GetType().Name, reason);
+                if (rpc is PolymarketPolygonRpc adapter)
+                    logger.LogInformation(PolymarketPolygonWorkerDiagnostics.RequestSummary,
+                        adapter.RequestCount, adapter.LogRequestCount, _socketMessages, Options.DailyHttpRequestLimit, Options.DailySocketMessageLimit);
             }
-            await Task.Delay(TimeSpan.FromSeconds(5), ct);
+            if (Options.CooldownRemaining > retry) retry = Options.CooldownRemaining;
+            await Task.Delay(retry, ct);
         }
     }
     private static async Task MonitorLeaseAsync(NpgsqlConnection connection, CancellationTokenSource owner)
@@ -76,39 +92,41 @@ public sealed class PolymarketPolygonWorker(IServiceScopeFactory scopes, IPolyma
             if (sources.Length == 0) { health.Status = PolymarketPolygonWorkerDiagnostics.OffNoEnabledAccounts; await Task.Delay(1000, ct); continue; }
             if (sources.Length > Options.MaxUniqueAddresses) throw new InvalidDataException(PolymarketPolygonWorkerDiagnostics.PolygonSourceCapacityExceeded);
             await rpc.VerifyChainAsync(ct); health.ChainVerified = true;
-            await StoreAsync(async s => { await s.ValidateAsync(ct); return true; });
+            await StoreAsync(async s => { await s.ValidateAsync(sources, ct); return true; });
             using var epoch = CancellationTokenSource.CreateLinkedTokenSource(ct);
             using var socket = new ClientWebSocket();
             socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(20);
+            // .NET transport PING/PONG detects a dead quiet connection without RPC subscriptions.
+            socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(20);
             using (var timeout = CancellationTokenSource.CreateLinkedTokenSource(epoch.Token))
             { timeout.CancelAfter(TimeSpan.FromSeconds(Options.TimeoutSeconds)); await socket.ConnectAsync(new Uri(Options.WebSocketEndpoint), timeout.Token); }
             var filters = Filters(sources);
-            health.DesiredSubscriptions = filters.Length + 1; health.AcknowledgedSubscriptions = 0;
-            var queue = Channel.CreateBounded<Frame>(new BoundedChannelOptions(Options.QueueCapacity)
+            health.DesiredSubscriptions = filters.Length; health.AcknowledgedSubscriptions = 0;
+            var queue = Channel.CreateBounded<PolymarketPolygonFrame>(new BoundedChannelOptions(Options.QueueCapacity)
             { SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.Wait });
             var acknowledged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var recovered = false;
             var socketChainVerified = false;
-            var lastFrame = DateTimeOffset.UtcNow;
+
             var reader = ReadAsync();
             var processor = ProcessAsync();
             var reconcile = ReconcileAsync();
+            var sourceChanges = WatchSourcesAsync();
             Task? recovery = null;
             try
             {
                 await socket.SendAsync(JsonSerializer.SerializeToUtf8Bytes(new { jsonrpc = "2.0", id = 0, method = PolymarketWireTokens.ChainId, @params = System.Array.Empty<object>() }), WebSocketMessageType.Text, true, epoch.Token);
                 for (var i = 0; i < filters.Length; i++)
                     await SendAsync(i + 1, new object[] { PolymarketWireTokens.LogSubscription, new { address = filters[i].Address, topics = filters[i].Topics } });
-                await SendAsync(filters.Length + 1, new object[] { PolymarketWireTokens.Heads });
                 recovery = RecoverAsync();
-                var first = await Task.WhenAny(reader, processor, reconcile, recovery);
+                var first = await Task.WhenAny(reader, processor, reconcile, sourceChanges, recovery);
                 await first;
-                if (first == recovery) await await Task.WhenAny(reader, processor, reconcile);
+                if (first == recovery) await await Task.WhenAny(reader, processor, reconcile, sourceChanges);
             }
             finally
             {
                 epoch.Cancel(); socket.Abort(); queue.Writer.TryComplete();
-                foreach (var task in new[] { reader, processor, reconcile, recovery }.Where(t => t is not null))
+                foreach (var task in new[] { reader, processor, reconcile, sourceChanges, recovery }.Where(t => t is not null))
                     try { await task!; } catch (Exception) { /* All epoch tasks are drained; the winning failure already propagates. */ }
             }
 
@@ -131,58 +149,56 @@ public sealed class PolymarketPolygonWorker(IServiceScopeFactory scopes, IPolyma
                         if (message.Length + receive.Count > Options.MaximumFrameBytes) throw new InvalidDataException(PolymarketPolygonWorkerDiagnostics.PolygonFrameLimit);
                         message.Write(bytes, 0, receive.Count);
                     } while (!receive.EndOfMessage);
+                    var day = DateOnly.FromDateTime(DateTime.UtcNow);
+                    if (_socketDay != day) { _socketDay = day; _socketMessages = 0; }
+                    if (++_socketMessages > Options.DailySocketMessageLimit)
+                    {
+                        var reset = PolymarketProviderQuotaException.UntilReset(DateTimeOffset.UtcNow);
+                        throw new PolymarketProviderQuotaException(Options.ExtendCooldown(reset));
+                    }
                     using var document = JsonDocument.Parse(message.ToArray()); var root = document.RootElement;
-                    lastFrame = DateTimeOffset.UtcNow;
+                    try { PolymarketProviderQuotaException.ThrowIfQuota(root, Options.QuotaBackoffSeconds); }
+                    catch (PolymarketProviderQuotaException quota)
+                    {
+                        throw new PolymarketProviderQuotaException(Options.ExtendCooldown(quota.RetryAfter));
+                    }
+                    ThrowIfSocketRpcError(root);
                     if (root.TryGetProperty("id", out var id))
                     {
                         if (id.GetInt32() == 0)
                         {
                             if (!root.TryGetProperty("result", out var chain) || chain.GetString() != PolymarketWireTokens.PolygonChainQuantity) throw new InvalidDataException(PolymarketPolygonWorkerDiagnostics.PolygonSocketChainMismatch);
                             socketChainVerified = true;
-                            if (acks.Count == filters.Length + 1) acknowledged.TrySetResult();
+                            if (acks.Count == filters.Length) acknowledged.TrySetResult();
                             continue;
                         }
                         if (root.TryGetProperty("error", out _) || !root.TryGetProperty("result", out var result) || result.ValueKind != JsonValueKind.String)
                             throw new InvalidDataException(PolymarketPolygonWorkerDiagnostics.PolygonSubscriptionRejected);
-                        if (id.GetInt32() < 1 || id.GetInt32() > filters.Length + 1) throw new InvalidDataException(PolymarketPolygonWorkerDiagnostics.UnexpectedPolygonAcknowledgment);
+                        if (id.GetInt32() < 1 || id.GetInt32() > filters.Length) throw new InvalidDataException(PolymarketPolygonWorkerDiagnostics.UnexpectedPolygonAcknowledgment);
                         acks.Add(id.GetInt32()); subscriptions.Add(result.GetString()!); health.AcknowledgedSubscriptions = acks.Count;
-                        if (acks.Count == filters.Length + 1 && socketChainVerified) acknowledged.TrySetResult();
+                        if (acks.Count == filters.Length && socketChainVerified) acknowledged.TrySetResult();
                     }
                     else if (root.TryGetProperty("params", out var parameters))
                     {
                         if (!subscriptions.Contains(parameters.GetProperty("subscription").GetString()!)) throw new InvalidDataException(PolymarketPolygonWorkerDiagnostics.UnacknowledgedPolygonSubscription);
                         var result = parameters.GetProperty("result");
                         if (result.TryGetProperty("logIndex", out _)) await queue.Writer.WriteAsync(new(PolymarketPolygonRpc.ParseLog(result)), epoch.Token);
-                        else await queue.Writer.WriteAsync(new(Head: PolymarketPolygonRpc.Hex(result.GetProperty("number").GetString()!)), epoch.Token);
+                        else throw new InvalidDataException(PolymarketPolygonWorkerDiagnostics.UnexpectedPolygonAcknowledgment);
                     }
                 }
             }
             async Task ProcessAsync()
             {
-                var headsSincePrune = 0;
-                await foreach (var frame in queue.Reader.ReadAllAsync(epoch.Token))
-                {
-                    if (frame.Log is not null) await StoreAsync(async s => { await s.PersistAsync([frame.Log], epoch.Token); return true; });
-                    if (frame.Head is { } head)
-                    {
-                        health.Head = head;
-                        if (recovered)
-                        {
-                            // Live heads advance coverage only after every filter is acknowledged and prior frames are durable.
-                            // The configured canonical boundary protects against cross-subscription scheduling.
-                            var final = await FinalBoundaryAsync(head, epoch.Token);
-                            await StoreAsync(async s => { await s.FinalizeAsync(final, epoch.Token); return true; });
-                            var covered = await rpc.BlockAsync(final, epoch.Token);
-                            await StoreAsync(async s => { if (await s.ValidateAsync(epoch.Token)) throw new InvalidDataException(PolymarketPolygonWorkerDiagnostics.PolygonCanonicalRewindRequiresRecovery); await s.CoveredAsync(sources, covered, epoch.Token); return true; });
-                            if (++headsSincePrune >= 64)
-                            {
-                                await StoreAsync(async s => { await s.PruneAsync(head, epoch.Token); return true; });
-                                headsSincePrune = 0;
-                            }
-                        }
-                    }
-                    frame.Barrier?.TrySetResult();
-                }
+                // This reader never runs finality, maintenance, or recovery RPC work.
+                await PolymarketPolygonFrameProcessor.RunAsync(queue.Reader, Options.QueueCapacity,
+                    async (log, token) => await StoreAsync(async s => { await s.PersistAsync([log], token); return true; }),
+                    (_, _) => Task.CompletedTask, epoch.Token);
+            }
+            async Task BarrierAsync()
+            {
+                var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                await queue.Writer.WriteAsync(new(Barrier: barrier), epoch.Token);
+                await barrier.Task.WaitAsync(epoch.Token);
             }
             async Task RecoverAsync()
             {
@@ -190,28 +206,7 @@ public sealed class PolymarketPolygonWorker(IServiceScopeFactory scopes, IPolyma
                 logger.LogInformation(PolymarketPolygonWorkerDiagnostics.PolygonSubscriptionsAcknowledged, health.AcknowledgedSubscriptions, health.DesiredSubscriptions);
                 var target = await rpc.HeadAsync(epoch.Token); health.Head = target; health.Status = PolymarketPolygonWorkerDiagnostics.RecoveringBoundedPolygonOverlap;
                 await StoreAsync(async s => { await s.InitializeAsync(sources, target, epoch.Token); return true; });
-                var from = await StoreAsync(s => s.NextAsync(sources, epoch.Token));
-                var span = Options.LogRangeBlocks; var requests = 0;
-                while (from <= target)
-                {
-                    var to = Math.Min(target, from + span - 1);
-                    try
-                    {
-                        foreach (var filter in filters)
-                        {
-                            if (++requests > Options.RecoveryRequests) throw new RecoveryBudgetException();
-                            var logs = await rpc.LogsAsync(new { address = filter.Address, topics = filter.Topics,
-                                fromBlock = PolymarketPolygonRpc.Quantity(from), toBlock = PolymarketPolygonRpc.Quantity(to) }, epoch.Token);
-                            await StoreAsync(async s => { await s.PersistAsync(logs, epoch.Token); return true; });
-                        }
-                    }
-                    catch (PolymarketLogRangeException) when (span > 1) { span = Math.Max(1, span / 2); continue; }
-                    var barrier = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                    await queue.Writer.WriteAsync(new(Barrier: barrier), epoch.Token); await barrier.Task.WaitAsync(epoch.Token);
-                    var block = await rpc.BlockAsync(to, epoch.Token);
-                    await StoreAsync(async s => { await s.CoveredAsync(sources, block, epoch.Token); return true; });
-                    from = to + 1;
-                }
+                await CatchupAsync(target);
                 var final = await FinalBoundaryAsync(target, epoch.Token);
                 await StoreAsync(async s => { await s.FinalizeAsync(final, epoch.Token); await s.PruneAsync(target, epoch.Token); return true; });
                 recovered = true;
@@ -220,27 +215,86 @@ public sealed class PolymarketPolygonWorker(IServiceScopeFactory scopes, IPolyma
                     ? PolymarketPolygonWorkerDiagnostics.DegradedCoverage
                     : PolymarketPolygonWorkerDiagnostics.ActiveCoverage;
             }
-            async Task ReconcileAsync()
+            async Task CatchupAsync(long target)
             {
-                var ticks = 0;
+                if (await StoreAsync(s => s.ValidateAsync(sources, epoch.Token)))
+                    throw new InvalidDataException(PolymarketPolygonWorkerDiagnostics.PolygonCanonicalRewindRequiresRecovery);
+                var from = await StoreAsync(s => s.NextAsync(sources, epoch.Token));
+                await PolymarketPolygonCatchup.RunAsync(from, target, Options,
+                    filters.Select(filter => new Func<long, long, object>((first, last) => new
+                    {
+                        address = filter.Address, topics = filter.Topics,
+                        fromBlock = PolymarketPolygonRpc.Quantity(first), toBlock = PolymarketPolygonRpc.Quantity(last)
+                    })).ToArray(), rpc,
+                    async logs => { await StoreAsync(async s => { await s.PersistAsync(logs, epoch.Token); return true; }); },
+                    BarrierAsync, block => StoreAsync(s => s.CoveredAsync(sources, block, epoch.Token)), epoch.Token);
+            }
+            async Task WatchSourcesAsync()
+            {
                 while (true)
                 {
                     await Task.Delay(1000, epoch.Token);
-                    if (DateTimeOffset.UtcNow - lastFrame > TimeSpan.FromSeconds(90)) throw new TimeoutException(PolymarketPolygonWorkerDiagnostics.PolygonHeadStreamStalled);
                     if (!(await StoreAsync(s => s.SourcesAsync(epoch.Token))).SequenceEqual(sources)) return;
+                }
+            }
+            async Task ReconcileAsync()
+            {
+                var ticks = 0;
+                var scheduler = new PolymarketPolygonWorkScheduler(Options, TimeProvider.System);
+                while (true)
+                {
+                    await Task.Delay(1000, epoch.Token);
+                    if (recovered)
+                    {
+                        await scheduler.TickAsync(
+                            () => StoreAsync(s => s.HasPendingAsync(sources, epoch.Token)),
+                            async () =>
+                            {
+                                // Drain preceding log persistence before canonical work; this alone cannot prove coverage.
+                                var head = await rpc.HeadAsync(epoch.Token);
+                                await BarrierAsync();
+                                health.Head = head;
+                                var final = await FinalBoundaryAsync(head, epoch.Token);
+                                await StoreAsync(async s =>
+                                {
+                                    if (await s.ValidateAsync(sources, epoch.Token))
+                                        throw new InvalidDataException(PolymarketPolygonWorkerDiagnostics.PolygonCanonicalRewindRequiresRecovery);
+                                    await s.FinalizeAsync(final, epoch.Token);
+                                    return true;
+                                });
+                                // Timer/head reads do not prove filtered stream coverage. Only the audit below
+                                // or reconnect recovery may advance the durable cursor.
+                            },
+                            async () => { await StoreAsync(async s => { await s.PruneAsync(health.Head, epoch.Token); return true; }); },
+                            async () =>
+                            {
+                                var target = await FinalBoundaryAsync(await rpc.HeadAsync(epoch.Token), epoch.Token);
+                                await CatchupAsync(target);
+                            });
+                    }
                     if (++ticks % 60 == 0)
                     {
                         await StoreAsync(async s => { await s.RefreshHealthAsync(sources, epoch.Token); return true; });
+                        if (rpc is PolymarketPolygonRpc adapter)
+                            logger.LogInformation(PolymarketPolygonWorkerDiagnostics.RequestSummary,
+                                adapter.RequestCount, adapter.LogRequestCount, _socketMessages, Options.DailyHttpRequestLimit, Options.DailySocketMessageLimit);
                         logger.LogInformation(PolymarketPolygonWorkerDiagnostics.HealthSummary,
                             health.ChainVerified, health.AcknowledgedSubscriptions, health.DesiredSubscriptions, health.Head, health.CanonicalBoundary,
                             health.CoveredBlock, health.CoverageLagBlocks, health.CoverageGaps, health.Malformed, health.Unsupported,
                             health.Duplicates, queue.Reader.Count, health.NormalizationPending, health.EnrichmentPending,
                             health.DeliveryPending, health.DeliveryFailed, PolymarketPolygonHealth.BacklogCountLimit);
                     }
-                    // No quiet-wallet eth_getLogs polling: only subscription updates/reconnect invoke recovery.
+                    // Sparse audits prove coverage; log subscriptions remain the immediate detection path.
                 }
             }
         }
+    }
+    internal static void ThrowIfSocketRpcError(JsonElement root)
+    {
+        if (!root.TryGetProperty("error", out var error) || error.ValueKind == JsonValueKind.Null) return;
+        var code = error.ValueKind == JsonValueKind.Object && error.TryGetProperty("code", out var value)
+            && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number) ? number : 0;
+        throw new InvalidDataException(PolymarketPolygonWorkerDiagnostics.PolygonSocketRpcRejected(code));
     }
     private async Task<long> FinalBoundaryAsync(long head, CancellationToken ct)
     {
@@ -264,5 +318,4 @@ public sealed class PolymarketPolygonWorker(IServiceScopeFactory scopes, IPolyma
     }
     private async Task<T> StoreAsync<T>(Func<PolymarketPolygonStore, Task<T>> action)
     { using var scope = scopes.CreateScope(); return await action(scope.ServiceProvider.GetRequiredService<PolymarketPolygonStore>()); }
-    private sealed class RecoveryBudgetException : Exception;
 }
